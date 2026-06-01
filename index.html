@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>강서청소년회관 전체회의 자료 자동화 시스템</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- SheetJS: 엑셀 파일 파싱 라이브러리 -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<!-- 상단 헤더 -->
+<header class="main-header">
+  <div class="header-inner">
+    <div class="header-logo">
+      <i class="fas fa-building-columns"></i>
+      <div>
+        <span class="header-title">강서청소년회관</span>
+        <span class="header-sub">전체회의 자료 자동화 시스템</span>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <button class="nav-btn active" data-page="input" onclick="showPage('input')">
+        <i class="fas fa-edit"></i> 자료 입력
+      </button>
+      <button class="nav-btn" data-page="history" onclick="showPage('history')">
+        <i class="fas fa-clock-rotate-left"></i> 회의 이력
+      </button>
+      <button class="nav-btn" data-page="preview" onclick="showPage('preview')">
+        <i class="fas fa-eye"></i> 미리보기
+      </button>
+      <button class="nav-btn" data-page="stats" onclick="showPage('stats')">
+        <i class="fas fa-chart-bar"></i> 실적 통계
+      </button>
+    </nav>
+  </div>
+</header>
+
+<!-- 메인 콘텐츠 -->
+<main class="main-content">
+
+  <!-- ==================== 입력 페이지 ==================== -->
+  <section id="page-input" class="page active">
+
+    <!-- 좌측 사이드바 (진행 단계) -->
+    <aside class="sidebar">
+      <div class="sidebar-title">📋 작성 단계</div>
+      <ul class="step-list" id="step-list">
+        <!-- 고정: 기본 정보 -->
+        <li class="step-item active" onclick="goStep('info')" id="step-tab-info">
+          <span class="step-num">1</span>
+          <span class="step-label">기본 정보</span>
+          <i class="fas fa-check step-check" id="check-info"></i>
+        </li>
+        <!-- 고정: 도산의 말씀 -->
+        <li class="step-item" onclick="goStep('dozan')" id="step-tab-dozan">
+          <span class="step-num">2</span>
+          <span class="step-label">도산의 말씀</span>
+          <i class="fas fa-check step-check" id="check-dozan"></i>
+        </li>
+        <!-- 팀 탭: 동적 렌더링 영역 -->
+        <li class="step-divider"><span>팀별 보고 순서 변경 가능</span></li>
+        <div id="team-step-tabs">
+          <!-- JS에서 동적 렌더링 -->
+        </div>
+        <!-- 고정: 기타 공지·생일 -->
+        <li class="step-item" onclick="goStep('etc')" id="step-tab-etc">
+          <span class="step-num" id="step-num-etc">6</span>
+          <span class="step-label">기타 공지</span>
+          <i class="fas fa-check step-check" id="check-etc"></i>
+        </li>
+        <!-- 고정: 엑셀 첨부자료 -->
+        <li class="step-item" onclick="goStep('excel')" id="step-tab-excel">
+          <span class="step-num" id="step-num-excel">7</span>
+          <span class="step-label">엑셀 첨부자료</span>
+          <i class="fas fa-check step-check" id="check-excel"></i>
+        </li>
+        <!-- 고정: 팀별 집계 (마지막) -->
+        <li class="step-item" onclick="goStep('summary')" id="step-tab-summary">
+          <span class="step-num" id="step-num-summary">8</span>
+          <span class="step-label">팀별 집계</span>
+          <i class="fas fa-check step-check" id="check-summary"></i>
+        </li>
+      </ul>
+      <div class="sidebar-progress">
+        <div class="progress-label">전체 완성도</div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="total-progress" style="width:0%"></div>
+        </div>
+        <div class="progress-pct" id="progress-pct">0%</div>
+      </div>
+      <button class="btn-preview-side" onclick="generatePreview()">
+        <i class="fas fa-eye"></i> 미리보기 생성
+      </button>
+    </aside>
+
+    <!-- 입력 폼 영역 -->
+    <div class="form-area">
+
+      <!-- STEP: 기본 정보 -->
+      <div class="step-panel active" id="panel-info">
+        <div class="panel-header">
+          <h2><i class="fas fa-info-circle"></i> 기본 정보</h2>
+          <p>회의의 기본 일정 정보를 입력하세요.</p>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label required">연도</label>
+            <input type="number" id="info-year" class="form-input" value="2026" min="2020" max="2099" oninput="onYearMonthChange()">
+          </div>
+          <div class="form-group">
+            <label class="form-label required">월</label>
+            <select id="info-month" class="form-input" onchange="onYearMonthChange()">
+              <option value="1">1월</option><option value="2">2월</option>
+              <option value="3">3월</option><option value="4">4월</option>
+              <option value="5" selected>5월</option><option value="6">6월</option>
+              <option value="7">7월</option><option value="8">8월</option>
+              <option value="9">9월</option><option value="10">10월</option>
+              <option value="11">11월</option><option value="12">12월</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label class="form-label required">회의 일시</label>
+            <input type="text" id="info-date" class="form-input" placeholder="예: 2026. 6. 4.(목) 10:00" oninput="autoSave()">
+          </div>
+          <div class="form-group full">
+            <label class="form-label required">회의 장소</label>
+            <input type="text" id="info-place" class="form-input" placeholder="예: 어우러짐" value="어우러짐" oninput="autoSave()">
+          </div>
+        </div>
+
+        <!-- 안건 에디터 -->
+        <div class="agenda-editor-box">
+          <div class="agenda-editor-header">
+            <div class="agenda-editor-title"><i class="fas fa-list-ol"></i> 안건 순서 <span class="agenda-editor-badge">편집 가능</span></div>
+            <div class="agenda-editor-actions">
+              <button class="btn-agenda-add" onclick="addAgendaItem()"><i class="fas fa-plus"></i> 안건 추가</button>
+              <button class="btn-agenda-reset" onclick="resetAgenda()"><i class="fas fa-rotate-left"></i> 기본값 복원</button>
+            </div>
+          </div>
+          <div class="agenda-help">💡 드래그로 순서 변경 · 항목 클릭으로 내용 수정 · 삭제 버튼으로 제거</div>
+          <ol class="agenda-edit-list" id="agenda-edit-list"></ol>
+        </div>
+        <div class="step-nav">
+          <div></div>
+          <button class="btn-next" onclick="nextStep('info')">다음 단계 <i class="fas fa-arrow-right"></i></button>
+        </div>
+      </div>
+
+      <!-- STEP: 도산의 말씀 -->
+      <div class="step-panel" id="panel-dozan">
+        <div class="panel-header">
+          <h2><i class="fas fa-quote-left"></i> 도산의 말씀</h2>
+          <p>이달의 도산 안창호 선생 말씀을 입력하세요.</p>
+        </div>
+        <div class="form-group full">
+          <label class="form-label required">말씀 내용</label>
+          <textarea id="dozan-content" class="form-textarea" rows="5" placeholder="도산 안창호 선생의 말씀을 입력하세요." oninput="autoSave()"></textarea>
+        </div>
+        <div class="form-group full">
+          <label class="form-label">출처</label>
+          <input type="text" id="dozan-source" class="form-input" placeholder="예: 1924년 중국 북경 구술, 「동광」잡지 1926년 8월호 수록" oninput="autoSave()">
+        </div>
+        <div class="dozan-preview-box" id="dozan-live-preview">
+          <div class="dozan-preview-label">미리보기</div>
+          <div class="dozan-preview-text" id="dozan-preview-content">말씀을 입력하면 여기에 표시됩니다.</div>
+          <div class="dozan-preview-source" id="dozan-preview-src"></div>
+        </div>
+        <div class="step-nav">
+          <button class="btn-prev" onclick="prevStep('dozan')"><i class="fas fa-arrow-left"></i> 이전</button>
+          <button class="btn-next" onclick="nextStep('dozan')">다음 단계 <i class="fas fa-arrow-right"></i></button>
+        </div>
+      </div>
+
+      <!-- STEP: 운영지원팀 -->
+      <div class="step-panel" id="panel-team-0">
+        <div class="panel-header team-header team-0">
+          <h2><i class="fas fa-users-gear"></i> 운영지원팀 보고</h2>
+          <p>담당자를 추가하고, 담당자별로 전월 보고와 당월 계획을 입력하세요.
+            <span class="month-badge-wrap">
+              <span class="month-badge prev-month-badge"><i class="fas fa-calendar-minus"></i> 전월: <strong id="prev-month-label-0">-</strong></span>
+              <span class="month-badge curr-month-badge"><i class="fas fa-calendar-check"></i> 당월: <strong id="curr-month-label-0">-</strong></span>
+            </span>
+          </p>
+        </div>
+        <div id="team0-members-wrap"><!-- 담당자 카드 동적 렌더 --></div>
+        <button class="btn-add-member" onclick="addMember(0)">
+          <i class="fas fa-user-plus"></i> 담당자 추가
+        </button>
+        <div class="step-nav">
+          <button class="btn-prev" onclick="prevStep('team-0')"><i class="fas fa-arrow-left"></i> 이전</button>
+          <button class="btn-next" onclick="nextStep('team-0')">다음 단계 <i class="fas fa-arrow-right"></i></button>
+        </div>
+      </div>
+
+      <!-- STEP: 교육·홍보팀 -->
+      <div class="step-panel" id="panel-team-1">
+        <div class="panel-header team-header team-1">
+          <h2><i class="fas fa-chalkboard-teacher"></i> 교육·홍보팀 보고</h2>
+          <p>담당자를 추가하고, 담당자별로 전월 보고와 당월 계획을 입력하세요.
+            <span class="month-badge-wrap">
+              <span class="month-badge prev-month-badge"><i class="fas fa-calendar-minus"></i> 전월: <strong id="prev-month-label-1">-</strong></span>
+              <span class="month-badge curr-month-badge"><i class="fas fa-calendar-check"></i> 당월: <strong id="curr-month-label-1">-</strong></span>
+            </span>
+          </p>
+        </div>
+        <div id="team1-members-wrap"><!-- 담당자 카드 동적 렌더 --></div>
+        <button class="btn-add-member" onclick="addMember(1)">
+          <i class="fas fa-user-plus"></i> 담당자 추가
+        </button>
+        <div class="step-nav">
+          <button class="btn-prev" onclick="prevStep('team-1')"><i class="fas fa-arrow-left"></i> 이전</button>
+          <button class="btn-next" onclick="nextStep('team-1')">다음 단계 <i class="fas fa-arrow-right"></i></button>
+        </div>
+      </div>
+
+      <!-- STEP: 청소년사업팀 -->
+      <div class="step-panel" id="panel-team-2">
+        <div class="panel-header team-header team-2">
+          <h2><i class="fas fa-child-reaching"></i> 청소년사업팀 보고</h2>
+          <p>담당자를 추가하고, 담당자별로 전월 보고와 당월 계획을 입력하세요.
+            <span class="month-badge-wrap">
+              <span class="month-badge prev-month-badge"><i class="fas fa-calendar-minus"></i> 전월: <strong id="prev-month-label-2">-</strong></span>
+              <span class="month-badge curr-month-badge"><i class="fas fa-calendar-check"></i> 당월: <strong id="curr-month-label-2">-</strong></span>
+            </span>
+          </p>
+        </div>
+        <div id="team2-members-wrap"><!-- 담당자 카드 동적 렌더 --></div>
+        <button class="btn-add-member" onclick="addMember(2)">
+          <i class="fas fa-user-plus"></i> 담당자 추가
+        </button>
+        <div class="step-nav">
+          <button class="btn-prev" onclick="prevStep('team-2')"><i class="fas fa-arrow-left"></i> 이전</button>
+          <button class="btn-next" onclick="nextStep('team-2')">다음 단계 <i class="fas fa-arrow-right"></i></button>
+        </div>
+      </div>
+
+      <!-- STEP: 기타 공지 + 생일 -->
+      <div class="step-panel" id="panel-etc">
+        <div class="panel-header">
+          <h2><i class="fas fa-bullhorn"></i> 기타 공지사항 & 생일 축하</h2>
+          <p>기타 공지사항과 이달의 생일자를 입력하세요.</p>
+        </div>
+
+        <div class="section-block">
+          <div class="section-block-header">
+            <span class="section-tag notice-tag">● 기타 공지사항</span>
+            <button class="btn-add-program" onclick="addNotice()"><i class="fas fa-plus"></i> 공지 추가</button>
+          </div>
+          <div id="notice-list" class="program-list"></div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-block-header">
+            <span class="section-tag birthday-tag">🎂 직원 생일 축하</span>
+            <button class="btn-add-program" onclick="addBirthday()"><i class="fas fa-plus"></i> 생일자 추가</button>
+          </div>
+          <div id="birthday-list" class="program-list"></div>
+        </div>
+
+        <div class="step-nav">
+          <button class="btn-prev" onclick="prevStep('etc')"><i class="fas fa-arrow-left"></i> 이전</button>
+          <button class="btn-next" onclick="nextStep('etc')">
+            <i class="fas fa-table-cells"></i> 팀별 집계 확인 <i class="fas fa-arrow-right"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP: 엑셀 첨부자료 뷰어 -->
+      <div class="step-panel" id="panel-excel">
+        <div class="panel-header" style="border-left-color:#0e7490">
+          <h2><i class="fas fa-file-excel" style="color:#217346"></i> 엑셀 첨부자료</h2>
+          <p>엑셀 파일을 불러오면 웹에서 바로 확인하고 인쇄할 수 있습니다.</p>
+        </div>
+
+        <!-- 파일 1: 집계표 -->
+        <div class="excel-viewer-block" id="excel-block-1">
+          <div class="excel-block-header">
+            <div class="excel-block-title">
+              <span class="excel-file-badge badge-1"><i class="fas fa-table"></i> 붙임 2</span>
+              <span class="excel-block-name">집계표 <em>(월별 사업 인원 집계)</em></span>
+            </div>
+            <div class="excel-block-actions">
+              <label class="btn-excel-upload" for="excel-file-1" title="엑셀 파일 선택">
+                <i class="fas fa-folder-open"></i> 파일 불러오기
+              </label>
+              <input type="file" id="excel-file-1" accept=".xlsx,.xls,.csv" style="display:none"
+                onchange="loadExcelFile(this, 'excel-sheet-wrap-1', 'excel-filename-1', 'excel-sheet-tabs-1')">
+              <button class="btn-excel-print" onclick="printExcelBlock(1)" title="인쇄">
+                <i class="fas fa-print"></i> 인쇄
+              </button>
+              <button class="btn-excel-clear" onclick="clearExcelBlock(1)" title="초기화">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+          <!-- 드래그 드롭 영역 -->
+          <div class="excel-drop-zone" id="excel-drop-1"
+            ondragover="excelDragOver(event)" ondragleave="excelDragLeave(event)"
+            ondrop="excelDrop(event, 'excel-sheet-wrap-1', 'excel-filename-1', 'excel-sheet-tabs-1', 'excel-drop-1')">
+            <i class="fas fa-file-excel"></i>
+            <p>여기에 엑셀 파일을 드래그하거나<br><strong>파일 불러오기</strong> 버튼을 클릭하세요</p>
+            <p class="excel-drop-hint">.xlsx / .xls / .csv 지원</p>
+          </div>
+          <!-- 시트 탭 -->
+          <div class="excel-sheet-tabs" id="excel-sheet-tabs-1" style="display:none"></div>
+          <!-- 파일명 표시 -->
+          <div class="excel-filename" id="excel-filename-1" style="display:none"></div>
+          <!-- 테이블 출력 -->
+          <div class="excel-sheet-wrap" id="excel-sheet-wrap-1"></div>
+        </div>
+
+        <!-- 파일 2: 수강생 인원 추이 -->
+        <div class="excel-viewer-block" id="excel-block-2">
+          <div class="excel-block-header">
+            <div class="excel-block-title">
+              <span class="excel-file-badge badge-2"><i class="fas fa-chart-line"></i> 붙임 3</span>
+              <span class="excel-block-name">수강생 인원 추이 <em>(2024~2026년 교육문화 프로그램)</em></span>
+            </div>
+            <div class="excel-block-actions">
+              <label class="btn-excel-upload" for="excel-file-2" title="엑셀 파일 선택">
+                <i class="fas fa-folder-open"></i> 파일 불러오기
+              </label>
+              <input type="file" id="excel-file-2" accept=".xlsx,.xls,.csv" style="display:none"
+                onchange="loadExcelFile(this, 'excel-sheet-wrap-2', 'excel-filename-2', 'excel-sheet-tabs-2')">
+              <button class="btn-excel-print" onclick="printExcelBlock(2)" title="인쇄">
+                <i class="fas fa-print"></i> 인쇄
+              </button>
+              <button class="btn-excel-clear" onclick="clearExcelBlock(2)" title="초기화">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+          <div class="excel-drop-zone" id="excel-drop-2"
+            ondragover="excelDragOver(event)" ondragleave="excelDragLeave(event)"
+            ondrop="excelDrop(event, 'excel-sheet-wrap-2', 'excel-filename-2', 'excel-sheet-tabs-2', 'excel-drop-2')">
+            <i class="fas fa-file-excel"></i>
+            <p>여기에 엑셀 파일을 드래그하거나<br><strong>파일 불러오기</strong> 버튼을 클릭하세요</p>
+            <p class="excel-drop-hint">.xlsx / .xls / .csv 지원</p>
+          </div>
+          <div class="excel-sheet-tabs" id="excel-sheet-tabs-2" style="display:none"></div>
+          <div class="excel-filename" id="excel-filename-2" style="display:none"></div>
+          <div class="excel-sheet-wrap" id="excel-sheet-wrap-2"></div>
+        </div>
+
+        <div class="step-nav">
+          <button class="btn-prev" onclick="prevStep('excel')"><i class="fas fa-arrow-left"></i> 이전</button>
+          <button class="btn-next" onclick="nextStep('excel')">
+            <i class="fas fa-table-cells"></i> 팀별 집계 확인 <i class="fas fa-arrow-right"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP: 팀별 집계 (마지막 단계) -->
+      <div class="step-panel" id="panel-summary">
+        <div class="panel-header" style="border-left-color:#1a4a8a">
+          <div class="panel-header-row">
+            <div>
+              <h2><i class="fas fa-table-cells"></i> 팀별 사업 인원 집계</h2>
+              <p>팀별 전체 프로그램의 청소년 · 성인 · 지도자(담당자) 인원을 자동 집계합니다.</p>
+            </div>
+            <div class="summary-export-actions" id="summary-export-actions" style="display:none;">
+              <button class="btn-summary-print" onclick="printTeamSummary('print')">
+                <i class="fas fa-print"></i> 인쇄
+              </button>
+              <button class="btn-summary-pdf" onclick="printTeamSummary('pdf')">
+                <i class="fas fa-file-pdf"></i> PDF 저장
+              </button>
+            </div>
+          </div>
+        </div>
+        <div id="summary-content">
+          <div class="empty-state"><i class="fas fa-table-cells"></i><p>팀별 보고 내용을 입력하면 자동으로 집계됩니다.</p></div>
+        </div>
+        <div class="step-nav">
+          <button class="btn-prev" onclick="prevStep('summary')"><i class="fas fa-arrow-left"></i> 이전</button>
+          <button class="btn-complete" onclick="generatePreview()">
+            <i class="fas fa-file-alt"></i> 회의자료 생성!
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /form-area -->
+  </section>
+
+  <!-- ==================== 이력 페이지 ==================== -->
+  <section id="page-history" class="page">
+    <div class="history-wrap">
+      <div class="history-header">
+        <h2><i class="fas fa-clock-rotate-left"></i> 저장된 회의 이력</h2>
+        <p>이전에 저장된 회의 자료를 불러오거나 관리할 수 있습니다.</p>
+      </div>
+      <div id="history-list" class="history-list">
+        <div class="empty-state"><i class="fas fa-folder-open"></i><p>저장된 회의 자료가 없습니다.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 미리보기 페이지 ==================== -->
+  <section id="page-preview" class="page">
+    <div class="preview-toolbar">
+      <button class="btn-back" onclick="showPage('input')"><i class="fas fa-arrow-left"></i> 돌아가기</button>
+      <div class="preview-toolbar-center">
+        <span id="preview-title-label">2026년 5월 전체회의 자료</span>
+      </div>
+      <div class="preview-actions">
+        <button class="btn-save-meeting" onclick="saveMeeting()"><i class="fas fa-save"></i> 저장</button>
+        <button class="btn-print" onclick="printDoc()"><i class="fas fa-print"></i> 인쇄</button>
+      </div>
+    </div>
+    <div class="preview-doc-wrap">
+      <div id="preview-document" class="preview-document">
+        <div class="empty-preview">
+          <i class="fas fa-file-alt"></i>
+          <p>입력 탭에서 자료를 작성한 후<br>미리보기 생성 버튼을 눌러주세요.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 실적 통계 페이지 ==================== -->
+  <section id="page-stats" class="page">
+    <div class="stats-wrap">
+      <div class="stats-header">
+        <div>
+          <h2><i class="fas fa-chart-bar"></i> 실적 통계</h2>
+          <p id="stats-period-label">월을 선택하면 해당 월 실적이 표시됩니다.</p>
+        </div>
+        <button class="btn-stats-refresh" onclick="renderStats()">
+          <i class="fas fa-rotate-right"></i> 새로고침
+        </button>
+      </div>
+      <div id="stats-content">
+        <div class="empty-state"><i class="fas fa-chart-pie"></i><p>입력 탭에서 자료를 작성한 후 확인하세요.</p></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 토스트 알림 -->
+<div id="toast" class="toast"></div>
+
+<!-- 프로그램 입력 모달 -->
+<div id="modal-overlay" class="modal-overlay" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="modal-title">프로그램 추가</h3>
+      <button class="modal-close" onclick="closeModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group full">
+        <label class="form-label required">프로그램명</label>
+        <input type="text" id="modal-prog-name" class="form-input" placeholder="프로그램 이름 입력">
+      </div>
+
+      <!-- 하위 항목 (세부 항목 + 일자 + 시간 + 장소 + 인원) -->
+      <div class="form-group full">
+        <label class="form-label">하위 항목 / 세부 내용</label>
+        <div id="modal-sub-list"></div>
+        <button class="btn-add-sub" onclick="addSubItem()"><i class="fas fa-plus"></i> 세부 항목 추가</button>
+      </div>
+
+      <!-- 프로그램 전체 일시·장소(선택) -->
+      <div class="form-grid-modal-3">
+        <div class="form-group">
+          <label class="form-label">일시</label>
+          <input type="text" id="modal-dates" class="form-input" placeholder="예: 6.7.(토), 6.14.(토)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">시간</label>
+          <input type="text" id="modal-time" class="form-input" placeholder="예: 10:00~12:00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">장소</label>
+          <input type="text" id="modal-place" class="form-input" placeholder="예: 어우러짐">
+        </div>
+      </div>
+
+      <!-- 대상/인원 -->
+      <div class="form-group full" id="participants-section">
+        <div class="participants-label-row">
+          <label class="form-label">대상 및 인원</label>
+          <!-- 세부 항목 인원 있을 때 표시되는 자동합산 안내 -->
+          <span class="participants-auto-badge" id="participants-auto-badge" style="display:none;">
+            <i class="fas fa-link"></i> 세부 항목 자동 합산 중
+          </span>
+        </div>
+
+        <!-- 자동합산 표시 (세부 항목 인원 존재 시) -->
+        <div class="participants-auto-wrap" id="participants-auto-wrap" style="display:none;">
+          <div class="participants-auto-row">
+            <div class="participants-auto-item youth">
+              <i class="fas fa-child"></i>
+              <span class="auto-label">청소년</span>
+              <strong id="auto-youth-val">0</strong><span>명</span>
+            </div>
+            <div class="participants-auto-sep">+</div>
+            <div class="participants-auto-item adult">
+              <i class="fas fa-person"></i>
+              <span class="auto-label">성인</span>
+              <strong id="auto-adult-val">0</strong><span>명</span>
+            </div>
+            <div class="participants-auto-sep">+</div>
+            <div class="participants-auto-item leader">
+              <i class="fas fa-chalkboard-user"></i>
+              <span class="auto-label">지도자</span>
+              <strong id="auto-leader-val">0</strong><span>명</span>
+            </div>
+            <div class="participants-auto-sep">=</div>
+            <div class="participants-auto-item total">
+              <i class="fas fa-users"></i>
+              <span class="auto-label">합계</span>
+              <strong id="auto-total-val">0</strong><span>명</span>
+            </div>
+          </div>
+          <p class="participants-auto-hint">
+            <i class="fas fa-circle-info"></i>
+            세부 항목의 인원이 자동으로 합산됩니다. 아래 직접 입력값은 무시됩니다.
+          </p>
+        </div>
+
+        <!-- 직접 입력 (세부 항목 인원 없을 때) -->
+        <div class="participants-grid" id="participants-manual-wrap">
+          <div class="participants-col">
+            <div class="participants-label"><i class="fas fa-child"></i> 청소년</div>
+            <div class="participants-input-wrap">
+              <input type="number" id="modal-youth" class="form-input participants-num" min="0" placeholder="0" oninput="calcTotal()">
+              <span class="participants-unit">명</span>
+            </div>
+          </div>
+          <div class="participants-col">
+            <div class="participants-label"><i class="fas fa-person"></i> 성인</div>
+            <div class="participants-input-wrap">
+              <input type="number" id="modal-adult" class="form-input participants-num" min="0" placeholder="0" oninput="calcTotal()">
+              <span class="participants-unit">명</span>
+            </div>
+          </div>
+          <div class="participants-col">
+            <div class="participants-label"><i class="fas fa-chalkboard-user"></i> 지도자</div>
+            <div class="participants-input-wrap">
+              <input type="number" id="modal-leader" class="form-input participants-num" min="0" placeholder="0" oninput="calcTotal()">
+              <span class="participants-unit">명</span>
+            </div>
+          </div>
+          <div class="participants-col total-col">
+            <div class="participants-label"><i class="fas fa-users"></i> 합계</div>
+            <div class="participants-total" id="modal-total">0명</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 비고 -->
+      <div class="form-group full">
+        <label class="form-label">비고/특이사항</label>
+        <input type="text" id="modal-notes" class="form-input" placeholder="특이사항 입력">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">취소</button>
+      <button class="btn-confirm" onclick="confirmProgram()"><i class="fas fa-check"></i> 추가</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/data.js"></script>
+<script src="js/excel.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
