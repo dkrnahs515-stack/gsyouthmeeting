@@ -321,29 +321,33 @@ function buildMemberCard(teamIdx, mIdx, member) {
     </div>
 
     <div class="member-card-body" id="member-body-${teamIdx}-${mIdx}">
-      <!-- 전월 활동 보고 -->
-      <div class="member-section">
-        <div class="member-section-header">
-          <span class="section-tag prev-tag prev-tag-month">● 전월 활동 보고</span>
-          <button class="btn-add-program" onclick="openProgramModal(${teamIdx},${mIdx},'prev')">
-            <i class="fas fa-plus"></i> 항목 추가
-          </button>
+      <div class="member-lr-wrap">
+        <!-- 전월 활동 보고 (좌) -->
+        <div class="member-section member-section-prev">
+          <div class="member-section-header">
+            <span class="section-tag prev-tag prev-tag-month">● 전월 활동 보고</span>
+            <button class="btn-add-program" onclick="openProgramModal(${teamIdx},${mIdx},'prev')">
+              <i class="fas fa-plus"></i> 항목 추가
+            </button>
+          </div>
+          <div class="program-list" id="prog-list-${teamIdx}-${mIdx}-prev">
+            ${prevItemsHtml}
+          </div>
         </div>
-        <div class="program-list" id="prog-list-${teamIdx}-${mIdx}-prev">
-          ${prevItemsHtml}
-        </div>
-      </div>
 
-      <!-- 당월 활동 계획 -->
-      <div class="member-section">
-        <div class="member-section-header">
-          <span class="section-tag next-tag next-tag-month">● 당월 활동 계획</span>
-          <button class="btn-add-program" onclick="openProgramModal(${teamIdx},${mIdx},'next')">
-            <i class="fas fa-plus"></i> 항목 추가
-          </button>
-        </div>
-        <div class="program-list" id="prog-list-${teamIdx}-${mIdx}-next">
-          ${nextItemsHtml}
+        <div class="member-lr-divider"></div>
+
+        <!-- 당월 활동 계획 (우) -->
+        <div class="member-section member-section-next">
+          <div class="member-section-header">
+            <span class="section-tag next-tag next-tag-month">● 당월 활동 계획</span>
+            <button class="btn-add-program" onclick="openProgramModal(${teamIdx},${mIdx},'next')">
+              <i class="fas fa-plus"></i> 항목 추가
+            </button>
+          </div>
+          <div class="program-list" id="prog-list-${teamIdx}-${mIdx}-next">
+            ${nextItemsHtml}
+          </div>
         </div>
       </div>
     </div>
@@ -1227,50 +1231,95 @@ function buildTeamStatsSections(prev, curr, opts = {}) {
     return { y:hasSub?subY:py, a:hasSub?subA:pa, l:hasSub?subL:pl };
   }
 
-  /* 프로그램 TR + 하위항목 TR 생성 */
-  function buildProgRows(progsArr, memberName, badgeHtml) {
-    return progsArr.map(prog => {
-      const { y, a, l } = getDispNums(prog);
-      const t = y+a+l;
-      const subRows = (prog.subs||[]).filter(s=>s.text).map(s => {
-        const sy=Number(s.youth)||0, sa=Number(s.adult)||0, sl=Number(s.leader)||0, st=sy+sa+sl;
-        return `<tr class="stats-sub-row">
-          <td></td>
-          <td class="stats-sub-name"><i class="fas fa-turn-down" style="font-size:10px;color:var(--gray-400);margin-right:4px;"></i>${escHtml(s.text)}</td>
-          <td>${s.date  ? escHtml(s.date)  : '-'}</td>
-          <td>${s.time  ? escHtml(s.time)  : '-'}</td>
-          <td>${s.place ? escHtml(s.place) : '-'}</td>
-          <td class="stats-num youth">${sy>0?sy:'-'}</td>
-          <td class="stats-num adult">${sa>0?sa:'-'}</td>
-          <td class="stats-num leader">${sl>0?sl:'-'}</td>
-          <td class="stats-num total">${st>0?st:'-'}</td>
-        </tr>`;
-      }).join('');
-      return `
-        <tr class="stats-prog-row">
-          <td>${badgeHtml}</td>
-          <td class="stats-prog-name"><strong>${escHtml(prog.name)}</strong><br><span class="stats-member-tag">${escHtml(memberName)}</span></td>
-          <td>${prog.dates?escHtml(prog.dates):'-'}</td>
-          <td>${prog.time ?escHtml(prog.time) :'-'}</td>
-          <td>${prog.place?escHtml(prog.place):'-'}</td>
-          <td class="stats-num youth">${y>0?y:'-'}</td>
-          <td class="stats-num adult">${a>0?a:'-'}</td>
-          <td class="stats-num leader">${l>0?l:'-'}</td>
-          <td class="stats-num total ${t>0?'has-data':''}">${t>0?t+'명':'-'}</td>
-        </tr>${subRows}`;
-    }).join('');
-  }
-
-  /* 기간별 소계행 */
-  function subtotalRow(label, sy, sa, sl, cls) {
+  /* 단일 기간 테이블 HTML 생성 */
+  function buildPeriodTable(progsArr, members, periodLabel, periodMonth, periodYear, badgeCls, sy, sa, sl, headerBg, headerColor, borderColor) {
     const st = sy+sa+sl;
-    return `<tr class="stats-period-subtotal ${cls}">
-      <td colspan="5" class="stats-subtotal-label">${label} 소계</td>
+
+    /* 프로그램 행들 */
+    let bodyRows = '';
+    members.forEach(member => {
+      const memberName = member.name || '(이름 미입력)';
+      const badge = `<span class="stats-badge ${badgeCls}">${periodMonth}월</span>`;
+      (progsArr[member._idx] || []).forEach(prog => {
+        const { y, a, l } = getDispNums(prog);
+        const t = y+a+l;
+        const subRows = (prog.subs||[]).filter(s=>s.text).map(s => {
+          const sy2=Number(s.youth)||0, sa2=Number(s.adult)||0, sl2=Number(s.leader)||0, st2=sy2+sa2+sl2;
+          return `<tr class="stats-sub-row">
+            <td></td>
+            <td class="stats-sub-name"><i class="fas fa-turn-down" style="font-size:10px;color:var(--gray-400);margin-right:4px;"></i>${escHtml(s.text)}</td>
+            <td>${s.date  ? escHtml(s.date)  : '-'}</td>
+            <td>${s.time  ? escHtml(s.time)  : '-'}</td>
+            <td>${s.place ? escHtml(s.place) : '-'}</td>
+            <td class="stats-num youth">${sy2>0?sy2:'-'}</td>
+            <td class="stats-num adult">${sa2>0?sa2:'-'}</td>
+            <td class="stats-num leader">${sl2>0?sl2:'-'}</td>
+            <td class="stats-num total">${st2>0?st2:'-'}</td>
+          </tr>`;
+        }).join('');
+        bodyRows += `
+          <tr class="stats-prog-row">
+            <td>${badge}</td>
+            <td class="stats-prog-name"><strong>${escHtml(prog.name)}</strong><br><span class="stats-member-tag">${escHtml(memberName)}</span></td>
+            <td>${prog.dates?escHtml(prog.dates):'-'}</td>
+            <td>${prog.time ?escHtml(prog.time) :'-'}</td>
+            <td>${prog.place?escHtml(prog.place):'-'}</td>
+            <td class="stats-num youth">${y>0?y:'-'}</td>
+            <td class="stats-num adult">${a>0?a:'-'}</td>
+            <td class="stats-num leader">${l>0?l:'-'}</td>
+            <td class="stats-num total ${t>0?'has-data':''}">${t>0?t+'명':'-'}</td>
+          </tr>${subRows}`;
+      });
+    });
+
+    /* 소계 행 */
+    const subtotal = `<tr class="stats-period-subtotal ${badgeCls==='prev-badge'?'prev-subtotal':'next-subtotal'}">
+      <td colspan="5" class="stats-subtotal-label">${periodMonth}월 소계</td>
       <td class="stats-num youth"><strong>${sy>0?sy:'-'}</strong></td>
       <td class="stats-num adult"><strong>${sa>0?sa:'-'}</strong></td>
       <td class="stats-num leader"><strong>${sl>0?sl:'-'}</strong></td>
       <td class="stats-num total has-data"><strong>${st>0?st+'명':'-'}</strong></td>
     </tr>`;
+
+    return `
+      <div class="stats-period-table-wrap">
+        <div class="stats-period-table-header" style="background:${headerBg};color:${headerColor};border-bottom:2px solid ${borderColor};">
+          <i class="fas fa-${badgeCls==='prev-badge'?'calendar-minus':'calendar-check'}"></i>
+          ${periodLabel}
+          <span class="stats-period-month">${periodMonth}월 (${periodYear})</span>
+        </div>
+        <div class="stats-table-wrap">
+          <table class="stats-table">
+            <thead>
+              <tr>
+                <th style="width:72px;">구분</th>
+                <th style="min-width:110px;">프로그램명</th>
+                <th style="width:80px;">일시</th>
+                <th style="width:80px;">시간</th>
+                <th style="width:80px;">장소</th>
+                <th style="width:52px;"><i class="fas fa-child"></i></th>
+                <th style="width:48px;"><i class="fas fa-person"></i></th>
+                <th style="width:52px;"><i class="fas fa-chalkboard-user"></i></th>
+                <th style="width:60px;"><i class="fas fa-users"></i></th>
+              </tr>
+            </thead>
+            <tbody>${bodyRows}${subtotal}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  /* 빈 기간 패널 */
+  function emptyPeriodPanel(periodLabel, periodMonth, headerBg, headerColor) {
+    return `
+      <div class="stats-period-table-wrap">
+        <div class="stats-period-table-header" style="background:${headerBg};color:${headerColor};border-bottom:2px solid ${headerColor}30;">
+          ${periodLabel} <span class="stats-period-month">${periodMonth}월</span>
+        </div>
+        <div style="padding:24px;text-align:center;color:var(--gray-400);font-size:13px;">
+          <i class="fas fa-inbox" style="font-size:24px;margin-bottom:8px;display:block;"></i>입력된 프로그램 없음
+        </div>
+      </div>`;
   }
 
   const sections = appState.teamOrder.map(teamIdx => {
@@ -1280,34 +1329,28 @@ function buildTeamStatsSections(prev, curr, opts = {}) {
     // 전월 / 당월 인원 누계
     let prevY=0, prevA=0, prevL=0;
     let nextY=0, nextA=0, nextL=0;
+    let hasPrev=false, hasNext=false;
 
-    // 전월 / 당월 행 모음
-    let prevRows = '', nextRows = '';
-    let hasPrev = false, hasNext = false;
+    // 멤버별 프로그램 맵 (_idx 주입)
+    const membersWithIdx = members.map((m, idx) => ({...m, _idx: idx}));
 
-    members.forEach(member => {
-      const memberName = member.name || '(이름 미입력)';
-      const prevBadge = `<span class="stats-badge prev-badge">${prev.month}월(전월)</span>`;
-      const nextBadge = `<span class="stats-badge next-badge">${curr.month}월(당월)</span>`;
+    // 전월/당월 프로그램 배열 (멤버 인덱스 → 배열)
+    const prevProgsByMember = {};
+    const nextProgsByMember = {};
 
-      // 전월 집계
+    members.forEach((member, idx) => {
       (member.prev || []).forEach(prog => {
         const { y, a, l } = getDispNums(prog);
         prevY+=y; prevA+=a; prevL+=l;
       });
-      prevRows += buildProgRows(member.prev || [], memberName, prevBadge);
-      if ((member.prev||[]).length) hasPrev = true;
+      if ((member.prev||[]).length) { prevProgsByMember[idx]=member.prev; hasPrev=true; }
 
-      // 당월 집계
       (member.next || []).forEach(prog => {
         const { y, a, l } = getDispNums(prog);
         nextY+=y; nextA+=a; nextL+=l;
       });
-      nextRows += buildProgRows(member.next || [], memberName, nextBadge);
-      if ((member.next||[]).length) hasNext = true;
+      if ((member.next||[]).length) { nextProgsByMember[idx]=member.next; hasNext=true; }
     });
-
-    const teamY = prevY+nextY, teamA = prevA+nextA, teamL = prevL+nextL;
 
     grandPrevY+=prevY; grandPrevA+=prevA; grandPrevL+=prevL;
     grandNextY+=nextY; grandNextA+=nextA; grandNextL+=nextL;
@@ -1322,29 +1365,24 @@ function buildTeamStatsSections(prev, curr, opts = {}) {
         </div>`;
     }
 
-    // 전월 섹션 그룹 헤더 행
-    const prevGroupRow = hasPrev ? `
-      <tr class="stats-period-group-row prev-group">
-        <td colspan="9"><i class="fas fa-calendar-minus"></i> 전월 활동 보고 <span class="stats-period-month">${prev.month}월 (${prev.year})</span></td>
-      </tr>` : '';
+    const teamY=prevY+nextY, teamA=prevA+nextA, teamL=prevL+nextL;
+    const teamTotal=teamY+teamA+teamL;
 
-    const nextGroupRow = hasNext ? `
-      <tr class="stats-period-group-row next-group">
-        <td colspan="9"><i class="fas fa-calendar-check"></i> 당월 활동 계획 <span class="stats-period-month">${curr.month}월 (${curr.year})</span></td>
-      </tr>` : '';
+    /* 전월 패널 */
+    const prevPanel = hasPrev
+      ? buildPeriodTable(prevProgsByMember, membersWithIdx,
+          '전월 활동 보고', prev.month, prev.year,
+          'prev-badge', prevY, prevA, prevL,
+          'var(--orange-lt)', 'var(--orange)', 'rgba(217,119,6,0.3)')
+      : emptyPeriodPanel('전월 활동 보고', prev.month, 'var(--orange-lt)', 'var(--orange)');
 
-    const prevSubtotalRow = hasPrev ? subtotalRow(`전월 ${prev.month}월`, prevY, prevA, prevL, 'prev-subtotal') : '';
-    const nextSubtotalRow = hasNext ? subtotalRow(`당월 ${curr.month}월`, nextY, nextA, nextL, 'next-subtotal') : '';
-
-    const teamTotal = teamY+teamA+teamL;
-    const teamSubtotalRow = `
-      <tr class="stats-team-subtotal">
-        <td colspan="5" style="text-align:right;font-weight:700;color:var(--gray-600);">팀 합계</td>
-        <td class="stats-num youth"><strong>${teamY>0?teamY:'-'}</strong></td>
-        <td class="stats-num adult"><strong>${teamA>0?teamA:'-'}</strong></td>
-        <td class="stats-num leader"><strong>${teamL>0?teamL:'-'}</strong></td>
-        <td class="stats-num total has-data"><strong>${teamTotal>0?teamTotal+'명':'-'}</strong></td>
-      </tr>`;
+    /* 당월 패널 */
+    const nextPanel = hasNext
+      ? buildPeriodTable(nextProgsByMember, membersWithIdx,
+          '당월 활동 계획', curr.month, curr.year,
+          'next-badge', nextY, nextA, nextL,
+          'var(--green-lt)', 'var(--green)', 'rgba(46,138,87,0.3)')
+      : emptyPeriodPanel('당월 활동 계획', curr.month, 'var(--green-lt)', 'var(--green)');
 
     return `
       <div class="stats-team-block">
@@ -1359,27 +1397,11 @@ function buildTeamStatsSections(prev, curr, opts = {}) {
             <span class="stats-sum-chip total-chip"><i class="fas fa-users"></i> 합계 <strong>${teamTotal}</strong>명</span>
           </div>
         </div>
-        <div class="stats-table-wrap">
-          <table class="stats-table">
-            <thead>
-              <tr>
-                <th style="width:88px;">구분</th>
-                <th style="min-width:130px;">프로그램명</th>
-                <th style="width:90px;">일시</th>
-                <th style="width:100px;">시간</th>
-                <th style="width:100px;">장소</th>
-                <th style="width:64px;"><i class="fas fa-child"></i> 청소년</th>
-                <th style="width:60px;"><i class="fas fa-person"></i> 성인</th>
-                <th style="width:64px;"><i class="fas fa-chalkboard-user"></i> 지도자</th>
-                <th style="width:72px;"><i class="fas fa-users"></i> 합계</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${prevGroupRow}${prevRows}${prevSubtotalRow}
-              ${nextGroupRow}${nextRows}${nextSubtotalRow}
-              ${teamSubtotalRow}
-            </tbody>
-          </table>
+        <!-- 전월(좌) / 당월(우) 2단 레이아웃 -->
+        <div class="stats-lr-wrap">
+          ${prevPanel}
+          <div class="stats-lr-divider"></div>
+          ${nextPanel}
         </div>
       </div>`;
   });
@@ -1558,11 +1580,21 @@ body{
 .leader-chip{background:#ede9fe;color:#6d28d9;}
 .total-chip{background:#f1f5f9;color:#334155;}
 
+/* ── 전월(좌) / 당월(우) 2단 레이아웃 ── */
+.stats-lr-wrap{display:grid;grid-template-columns:1fr 1fr;align-items:start;}
+.stats-period-table-wrap{min-width:0;border-right:1px solid #e2e8f0;}
+.stats-period-table-wrap:last-child{border-right:none;}
+.stats-period-table-header{
+  display:flex;align-items:center;gap:7px;
+  padding:8px 12px;font-size:11pt;font-weight:700;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;
+}
+
 /* ── 테이블 래퍼 ── */
 .stats-table-wrap{overflow-x:auto;padding:0 4px 4px;}
-.stats-table{width:100%;border-collapse:collapse;font-size:9pt;}
+.stats-table{width:100%;border-collapse:collapse;font-size:8.5pt;}
 .stats-table th,.stats-table td{
-  border:1px solid #d1d5db;padding:6px 10px;vertical-align:middle;
+  border:1px solid #d1d5db;padding:4px 8px;vertical-align:middle;
 }
 .stats-table th{
   background:#1e3a5f;color:#fff;font-weight:700;text-align:center;
@@ -1698,25 +1730,30 @@ body{
 
 /* ============================================================
    저장 / 불러오기
+   ※ 실제 구현은 js/firebase.js (ES Module)에서 window.* 로 주입됩니다.
+      아래 함수들은 firebase.js 로드 전 DOMContentLoaded 타이밍 보호용
+      임시 stub 입니다. firebase.js가 로드되면 자동으로 덮어씁니다.
    ============================================================ */
 
 function autoSave() {
+  /* stub: firebase.js 로드 전 localStorage 임시 저장 */
   try { localStorage.setItem('kgyc_draft', JSON.stringify(collectData())); } catch(e) {}
 }
 
 function loadFromLocalStorage() {
+  /* stub: firebase.js 로드 전 localStorage fallback */
   try {
     const raw = localStorage.getItem('kgyc_draft');
     if (!raw) return;
     restoreData(JSON.parse(raw));
-    showToast('💾 이전 작업을 불러왔습니다.');
   } catch(e) {}
 }
 
-async function saveMeeting() {
-  const d = collectData();
-  const title = `${d.year}년 ${d.month}월 전체회의`;
+function saveMeeting() {
+  /* stub: firebase.js 로드 전 localStorage fallback */
   try {
+    const d = collectData();
+    const title = `${d.year}년 ${d.month}월 전체회의`;
     const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
     const record = { id: Date.now().toString(), title, year:d.year, month:d.month,
       savedAt: new Date().toLocaleString('ko-KR'), data: d };
@@ -1729,6 +1766,7 @@ async function saveMeeting() {
 }
 
 function refreshHistory() {
+  /* stub: firebase.js 로드 전 localStorage fallback */
   const list  = document.getElementById('history-list');
   const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
   if (!saved.length) {
@@ -1746,22 +1784,27 @@ function refreshHistory() {
         <button class="btn-hist-del"  onclick="deleteHistRecord(${i})"><i class="fas fa-trash"></i></button>
       </div>
     </div>`).join('');
+  window._fbHistoryCache = saved;
 }
 
 function loadHistRecord(idx) {
-  const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
-  if (!saved[idx]) return;
-  restoreData(saved[idx].data);
-  localStorage.setItem('kgyc_draft', JSON.stringify(saved[idx].data));
+  const records = window._fbHistoryCache || [];
+  if (!records[idx]) return;
+  restoreData(records[idx].data);
+  autoSave();
   showPage('input'); goStep('info');
-  showToast(`📂 "${saved[idx].title}" 불러왔습니다.`);
+  showToast(`📂 "${records[idx].title}" 불러왔습니다.`);
 }
 
 function deleteHistRecord(idx) {
+  const records = window._fbHistoryCache || [];
+  if (!records[idx]) return;
   if (!confirm('이 기록을 삭제할까요?')) return;
-  const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
-  saved.splice(idx, 1);
-  localStorage.setItem('kgyc_history', JSON.stringify(saved));
+  try {
+    const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
+    saved.splice(idx, 1);
+    localStorage.setItem('kgyc_history', JSON.stringify(saved));
+  } catch(e) {}
   refreshHistory(); showToast('🗑️ 삭제되었습니다.');
 }
 
