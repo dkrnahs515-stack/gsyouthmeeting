@@ -1,530 +1,107 @@
 /* ============================================
-   회의자료 삽입 탭
-   - 텍스트/CSV/엑셀/JSON 파일을 읽어 회의자료 구조에 자동 반영
-   - 브라우저 정적 환경 기준: txt, csv, xlsx, xls, json 우선 지원
+   회의자료 삽입 + PDF → 표준 엑셀 변환 통합 기능
+   - 좌측 [회의자료 삽입] 탭 생성
+   - 엑셀/CSV/TXT/JSON 붙여넣기 및 업로드 자동 기입
+   - PDF 업로드 → 표준 엑셀 변환/다운로드 → 자동 기입
    ============================================ */
 
 (function () {
   const STYLE_ID = 'meeting-import-style';
   const PANEL_ID = 'panel-import-meeting';
   const STEP_ID = 'step-tab-import-meeting';
+  const HEADERS = ['연도','월','회의일시','회의장소','팀','담당자','직위','구분','프로그램명','세부내용','일자','시간','운영장소','청소년','성인','지도자','비고'];
+  let selectedPdfFile = null;
 
-  const TEAM_NAMES = [
-    { idx: 0, name: '운영지원팀', keys: ['운영지원팀', '운영지원'] },
-    { idx: 1, name: '교육·홍보팀', keys: ['교육·홍보팀', '교육홍보팀', '교육·홍보', '교육홍보'] },
-    { idx: 2, name: '청소년사업팀', keys: ['청소년사업팀', '청소년사업'] }
+  const TEAMS = [
+    { idx: 0, name: '운영지원팀', keys: ['운영지원팀','운영지원'] },
+    { idx: 1, name: '교육·홍보팀', keys: ['교육·홍보팀','교육홍보팀','교육·홍보','교육홍보'] },
+    { idx: 2, name: '청소년사업팀', keys: ['청소년사업팀','청소년사업'] }
   ];
+
+  function toast(msg) { if (typeof showToast === 'function') showToast(msg); }
+  function esc(v) { return typeof escHtml === 'function' ? escHtml(v || '') : String(v || '').replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s])); }
+  function num(v) { const n = Number(String(v || '').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? n : 0; }
+  function cell(row, idx) { return idx >= 0 ? row[idx] : ''; }
+  function cleanLine(s) { return String(s || '').replace(/^[\-–—•ㆍ·*＊■□▶▷✔✓\s]+/, '').replace(/\s+/g, ' ').trim(); }
 
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      .import-panel-card {
-        background: #fff;
-        border-radius: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,.08);
-        border: 1.5px solid #e2e8f0;
-        padding: 22px 24px;
-        margin-bottom: 16px;
-      }
-      .import-grid {
-        display: grid;
-        grid-template-columns: 1.1fr .9fr;
-        gap: 18px;
-        align-items: start;
-      }
-      .import-drop-zone {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        min-height: 170px;
-        padding: 28px 20px;
-        border: 2.5px dashed #cbd5e1;
-        border-radius: 16px;
-        background: #f8fafc;
-        color: #64748b;
-        text-align: center;
-        cursor: pointer;
-        transition: border-color .2s, background .2s, color .2s;
-      }
-      .import-drop-zone:hover,
-      .import-drop-zone.drag-active {
-        border-color: #1a4a8a;
-        background: #eef6ff;
-        color: #1a4a8a;
-      }
-      .import-drop-zone i {
-        font-size: 34px;
-        color: #1a4a8a;
-        margin-bottom: 10px;
-      }
-      .import-drop-zone strong { color: #1a4a8a; }
-      .import-help-list {
-        display: flex;
-        flex-direction: column;
-        gap: 9px;
-        padding: 14px 16px;
-        background: #f8fafc;
-        border-radius: 12px;
-        border: 1px solid #e2e8f0;
-        font-size: 12px;
-        color: #475569;
-        line-height: 1.55;
-      }
-      .import-help-list b { color: #1a4a8a; }
-      .import-textarea {
-        width: 100%;
-        min-height: 230px;
-        resize: vertical;
-        border: 1.5px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 14px 16px;
-        font-family: 'Noto Sans KR', sans-serif;
-        font-size: 13px;
-        line-height: 1.65;
-        outline: none;
-        background: #f8fafc;
-        color: #1e293b;
-      }
-      .import-textarea:focus { border-color: #2a67c0; background: #fff; }
-      .import-actions {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-top: 14px;
-      }
-      .import-option {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        font-weight: 700;
-        color: #475569;
-      }
-      .btn-import-apply,
-      .btn-import-clear,
-      .btn-import-sample {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        border: none;
-        border-radius: 10px;
-        padding: 10px 16px;
-        font-family: inherit;
-        font-size: 13px;
-        font-weight: 800;
-        cursor: pointer;
-        transition: background .15s, transform .1s;
-      }
-      .btn-import-apply { background: #1a4a8a; color: #fff; }
-      .btn-import-clear { background: #f1f5f9; color: #475569; }
-      .btn-import-sample { background: #fff7ed; color: #c2410c; }
-      .btn-import-apply:hover,
-      .btn-import-clear:hover,
-      .btn-import-sample:hover { transform: translateY(-1px); }
-      .import-result-box {
-        margin-top: 14px;
-        padding: 12px 14px;
-        border-radius: 12px;
-        background: #ecfdf5;
-        color: #166534;
-        border: 1px solid #bbf7d0;
-        font-size: 12px;
-        font-weight: 700;
-        line-height: 1.55;
-        display: none;
-      }
-      .step-item-import .step-num { background: #fef3c7; color: #92400e; }
-      .step-item-import.active .step-num { background: #d97706; color: #fff; }
-      @media (max-width: 900px) {
-        .import-grid { grid-template-columns: 1fr; }
-      }
+      .step-item-import .step-num{background:#fef3c7;color:#92400e}.step-item-import.active .step-num{background:#d97706;color:#fff}
+      .import-card{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);border:1.5px solid #e2e8f0;padding:22px 24px;margin-bottom:16px}
+      .import-card.pdf{border-left:5px solid #b91c1c}.import-card.data{border-left:5px solid #1a4a8a}
+      .import-title{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:800;margin-bottom:6px}.import-title.pdf{color:#b91c1c}.import-title.data{color:#1a4a8a}
+      .import-sub{font-size:12px;color:#64748b;line-height:1.55;margin-bottom:14px}
+      .import-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch}
+      .import-drop{min-height:145px;border:2.5px dashed #cbd5e1;background:#f8fafc;color:#64748b;border-radius:14px;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:22px;cursor:pointer;transition:.15s}
+      .import-drop:hover,.import-drop.drag-active{background:#eef6ff;border-color:#1a4a8a;color:#1a4a8a;transform:translateY(-1px)}
+      .import-drop.pdf{border-color:#fecaca;background:#fff7f7;color:#7f1d1d}.import-drop.pdf:hover,.import-drop.pdf.drag-active{background:#fee2e2;border-color:#b91c1c;color:#b91c1c}
+      .import-drop i{font-size:32px;margin-bottom:8px}.import-drop.pdf i{color:#b91c1c}.import-drop.data i{color:#1a4a8a}
+      .import-file-name{margin-top:8px;font-size:12px;font-weight:800}.import-help{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;font-size:12px;color:#475569;line-height:1.6}.import-help b{color:#1a4a8a}
+      .import-textarea{width:100%;min-height:230px;resize:vertical;border:1.5px solid #e2e8f0;border-radius:12px;padding:14px 16px;font-family:'Noto Sans KR',sans-serif;font-size:13px;line-height:1.65;outline:none;background:#f8fafc;color:#1e293b}.import-textarea:focus{border-color:#2a67c0;background:#fff}
+      .import-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px}.import-btns{display:flex;gap:8px;flex-wrap:wrap}.import-option{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#475569}
+      .btn-import,.btn-pdf{display:inline-flex;align-items:center;gap:6px;border:none;border-radius:10px;padding:10px 16px;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer;transition:.1s}.btn-import:hover,.btn-pdf:hover{transform:translateY(-1px)}.btn-import:disabled,.btn-pdf:disabled{opacity:.45;cursor:not-allowed;transform:none}
+      .btn-primary{background:#1a4a8a;color:#fff}.btn-clear{background:#f1f5f9;color:#475569}.btn-sample{background:#fff7ed;color:#c2410c}.btn-pdf-convert{background:#b91c1c;color:#fff}.btn-pdf-apply{background:#ecfdf5;color:#166534;border:1px solid #bbf7d0}
+      .import-status{display:none;margin-top:12px;padding:11px 13px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;font-weight:700;line-height:1.55}.import-status.ok{background:#ecfdf5;border-color:#bbf7d0;color:#166534}.import-status.err{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+      @media(max-width:900px){.import-grid{grid-template-columns:1fr}.import-actions{align-items:flex-start;flex-direction:column}}
     `;
     document.head.appendChild(style);
   }
 
-  function blankDataFromCurrent() {
+  function blankData() {
     const base = typeof collectData === 'function' ? collectData() : {};
-    return {
-      year: base.year || new Date().getFullYear(),
-      month: base.month || (new Date().getMonth() + 1),
-      date: base.date || '',
-      place: base.place || '어우러짐',
-      agenda: Array.isArray(base.agenda) ? base.agenda.map(a => ({ ...a })) : [],
-      teamOrder: Array.isArray(base.teamOrder) ? [...base.teamOrder] : [0, 1, 2],
-      dozan: { content: '', source: '' },
-      programs: { 0: [], 1: [], 2: [] },
-      notices: [],
-      birthdays: []
-    };
+    return { year: base.year || new Date().getFullYear(), month: base.month || new Date().getMonth()+1, date: base.date || '', place: base.place || '어우러짐', agenda: Array.isArray(base.agenda)?base.agenda:[], teamOrder: [0,1,2], dozan:{content:'',source:''}, programs:{0:[],1:[],2:[]}, notices:[], birthdays:[] };
   }
+  function currentData(reset) { return reset ? blankData() : JSON.parse(JSON.stringify(typeof collectData === 'function' ? collectData() : blankData())); }
+  function ensure(data){ if(!data.programs)data.programs={0:[],1:[],2:[]}; [0,1,2].forEach(i=>{if(!Array.isArray(data.programs[i]))data.programs[i]=[]}); }
+  function teamIdx(v){ const t=String(v||'').replace(/\s/g,''); const found=TEAMS.find(team=>team.keys.some(k=>t.includes(k.replace(/\s/g,'')))); return found?found.idx:0; }
+  function period(v){ const t=String(v||'').replace(/\s/g,''); if(/전월|보고|실적|결과/.test(t))return'prev'; if(/당월|계획|예정/.test(t))return'next'; return'next'; }
+  function findMember(data, ti, name, title){ ensure(data); const n=String(name||'자동삽입').trim()||'자동삽입'; let m=data.programs[ti].find(x=>(x.name||'')===n); if(!m){m={id:'',name:n,title:String(title||'').trim(),prev:[],next:[]};data.programs[ti].push(m)} if(title&&!m.title)m.title=String(title).trim(); return m; }
 
-  function currentDataCopy() {
-    const base = typeof collectData === 'function' ? collectData() : blankDataFromCurrent();
-    return JSON.parse(JSON.stringify(base));
-  }
-
-  function ensurePrograms(data) {
-    if (!data.programs) data.programs = { 0: [], 1: [], 2: [] };
-    [0, 1, 2].forEach(i => { if (!Array.isArray(data.programs[i])) data.programs[i] = []; });
-  }
-
-  function findTeamIdx(value) {
-    const text = String(value || '').replace(/\s/g, '');
-    const found = TEAM_NAMES.find(t => t.keys.some(k => text.includes(k.replace(/\s/g, ''))));
-    return found ? found.idx : 0;
-  }
-
-  function findOrCreateMember(data, teamIdx, name, title) {
-    ensurePrograms(data);
-    const memberName = String(name || '').trim() || '자동삽입';
-    let member = data.programs[teamIdx].find(m => (m.name || '') === memberName);
-    if (!member) {
-      member = { id: '', name: memberName, title: String(title || '').trim(), prev: [], next: [] };
-      data.programs[teamIdx].push(member);
-    }
-    if (title && !member.title) member.title = String(title).trim();
-    if (!Array.isArray(member.prev)) member.prev = [];
-    if (!Array.isArray(member.next)) member.next = [];
-    return member;
-  }
-
-  function normalizePeriod(value) {
-    const text = String(value || '').replace(/\s/g, '');
-    if (/전월|보고|실적|결과/.test(text)) return 'prev';
-    if (/당월|계획|예정/.test(text)) return 'next';
-    return 'next';
-  }
-
-  function toNumber(value) {
-    const n = Number(String(value || '').replace(/[^0-9.-]/g, ''));
-    return Number.isFinite(n) ? n : 0;
-  }
-
-  function createProgramFromRow(row, map) {
-    const name = getCell(row, map.program) || getCell(row, map.name) || '';
-    const subText = getCell(row, map.sub) || getCell(row, map.content) || '';
-    const prog = {
-      name: String(name || subText || '제목 없음').trim(),
-      dates: String(getCell(row, map.date) || '').trim(),
-      time: String(getCell(row, map.time) || '').trim(),
-      place: String(getCell(row, map.place) || '').trim(),
-      youth: toNumber(getCell(row, map.youth)),
-      adult: toNumber(getCell(row, map.adult)),
-      leader: toNumber(getCell(row, map.leader)),
-      notes: String(getCell(row, map.note) || '').trim(),
-      subs: []
-    };
-    if (subText && String(subText).trim() !== prog.name) {
-      prog.subs.push({
-        text: String(subText).trim(),
-        date: String(getCell(row, map.subDate) || '').trim(),
-        time: String(getCell(row, map.subTime) || '').trim(),
-        place: String(getCell(row, map.subPlace) || '').trim(),
-        youth: toNumber(getCell(row, map.subYouth)),
-        adult: toNumber(getCell(row, map.subAdult)),
-        leader: toNumber(getCell(row, map.subLeader))
-      });
-    }
-    return prog;
-  }
-
-  function getCell(row, idx) {
-    return idx >= 0 ? row[idx] : '';
-  }
-
-  function headerIndex(headers, patterns) {
-    return headers.findIndex(h => patterns.some(p => String(h || '').replace(/\s/g, '').includes(p)));
-  }
-
-  function parseRowsToData(rows, reset) {
-    const data = reset ? blankDataFromCurrent() : currentDataCopy();
-    ensurePrograms(data);
-    const cleanRows = rows.filter(r => Array.isArray(r) && r.some(c => String(c || '').trim()));
-    if (!cleanRows.length) return { data, count: 0, mode: 'rows' };
-
-    const headers = cleanRows[0].map(h => String(h || '').trim());
-    const map = {
-      year: headerIndex(headers, ['연도']),
-      month: headerIndex(headers, ['월']),
-      dateInfo: headerIndex(headers, ['회의일시', '일시']),
-      placeInfo: headerIndex(headers, ['회의장소', '장소']),
-      team: headerIndex(headers, ['팀']),
-      member: headerIndex(headers, ['담당자', '작성자', '이름']),
-      title: headerIndex(headers, ['직위', '직책']),
-      period: headerIndex(headers, ['구분', '분류', '전월당월']),
-      program: headerIndex(headers, ['프로그램명', '사업명', '활동명']),
-      name: headerIndex(headers, ['제목']),
-      sub: headerIndex(headers, ['세부내용', '하위항목', '내용']),
-      content: headerIndex(headers, ['보고내용', '계획내용']),
-      date: headerIndex(headers, ['일자', '날짜', '기간']),
-      time: headerIndex(headers, ['시간']),
-      place: headerIndex(headers, ['운영장소', '활동장소']),
-      youth: headerIndex(headers, ['청소년']),
-      adult: headerIndex(headers, ['성인']),
-      leader: headerIndex(headers, ['지도자', '담당지도자']),
-      note: headerIndex(headers, ['비고', '특이사항', '메모']),
-      subDate: headerIndex(headers, ['세부일자']),
-      subTime: headerIndex(headers, ['세부시간']),
-      subPlace: headerIndex(headers, ['세부장소']),
-      subYouth: headerIndex(headers, ['세부청소년']),
-      subAdult: headerIndex(headers, ['세부성인']),
-      subLeader: headerIndex(headers, ['세부지도자'])
-    };
-
-    let count = 0;
-    cleanRows.slice(1).forEach(row => {
-      if (map.year >= 0 && row[map.year]) data.year = toNumber(row[map.year]) || data.year;
-      if (map.month >= 0 && row[map.month]) data.month = toNumber(row[map.month]) || data.month;
-      if (map.dateInfo >= 0 && row[map.dateInfo]) data.date = String(row[map.dateInfo]).trim();
-      if (map.placeInfo >= 0 && row[map.placeInfo]) data.place = String(row[map.placeInfo]).trim();
-
-      const progName = getCell(row, map.program) || getCell(row, map.name) || getCell(row, map.content) || getCell(row, map.sub);
-      if (!progName) return;
-
-      const teamIdx = findTeamIdx(getCell(row, map.team));
-      const member = findOrCreateMember(data, teamIdx, getCell(row, map.member), getCell(row, map.title));
-      const period = normalizePeriod(getCell(row, map.period));
-      member[period].push(createProgramFromRow(row, map));
-      count += 1;
+  function headerIndex(headers, pats){ return headers.findIndex(h=>pats.some(p=>String(h||'').replace(/\s/g,'').includes(p))); }
+  function parseRows(rows, reset){
+    const data=currentData(reset); ensure(data); const clean=rows.filter(r=>Array.isArray(r)&&r.some(c=>String(c||'').trim())); if(!clean.length)return{data,count:0,mode:'rows'};
+    const h=clean[0].map(x=>String(x||'').trim());
+    const map={year:headerIndex(h,['연도']),month:headerIndex(h,['월']),dateInfo:headerIndex(h,['회의일시','일시']),placeInfo:headerIndex(h,['회의장소','장소']),team:headerIndex(h,['팀']),member:headerIndex(h,['담당자','작성자','이름']),title:headerIndex(h,['직위','직책']),period:headerIndex(h,['구분','분류','전월당월']),program:headerIndex(h,['프로그램명','사업명','활동명']),content:headerIndex(h,['세부내용','보고내용','계획내용','내용']),date:headerIndex(h,['일자','날짜','기간']),time:headerIndex(h,['시간']),place:headerIndex(h,['운영장소','활동장소']),youth:headerIndex(h,['청소년']),adult:headerIndex(h,['성인']),leader:headerIndex(h,['지도자']),note:headerIndex(h,['비고','특이사항','메모'])};
+    let count=0;
+    clean.slice(1).forEach(row=>{
+      if(map.year>=0&&row[map.year])data.year=num(row[map.year])||data.year; if(map.month>=0&&row[map.month])data.month=num(row[map.month])||data.month; if(map.dateInfo>=0&&row[map.dateInfo])data.date=String(row[map.dateInfo]).trim(); if(map.placeInfo>=0&&row[map.placeInfo])data.place=String(row[map.placeInfo]).trim();
+      const pname=cell(row,map.program)||cell(row,map.content); if(!pname)return; const ti=teamIdx(cell(row,map.team)); const m=findMember(data,ti,cell(row,map.member),cell(row,map.title)); const p=period(cell(row,map.period));
+      m[p].push({name:String(pname).trim(),dates:String(cell(row,map.date)||'').trim(),time:String(cell(row,map.time)||'').trim(),place:String(cell(row,map.place)||'').trim(),youth:num(cell(row,map.youth)),adult:num(cell(row,map.adult)),leader:num(cell(row,map.leader)),notes:String(cell(row,map.note)||'').trim(),subs: cell(row,map.content)&&cell(row,map.content)!==pname?[{text:String(cell(row,map.content)).trim()}]:[]}); count++;
     });
-
-    return { data, count, mode: 'rows' };
+    return{data,count,mode:'excel'};
   }
+  function parseDelimited(text){ const lines=String(text||'').split(/\r?\n/).filter(l=>l.trim()); const d=lines.some(l=>l.includes('\t'))?'\t':','; return lines.map(l=>l.split(d).map(c=>c.replace(/^"|"$/g,'').trim())); }
+  function parseText(text, reset){ const rows=parseDelimited(text); if(rows[0]&&/팀|담당자|프로그램|구분|사업명|활동명/.test(rows[0].join(' ')))return parseRows(rows,reset); const data=currentData(reset); ensure(data); const lines=String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean); let ti=0,p='next',member=findMember(data,0,'자동삽입',''),count=0; lines.forEach(line=>{ const ym=line.match(/(20\d{2})\s*년\s*(\d{1,2})\s*월/); if(ym){data.year=+ym[1];data.month=+ym[2];} if(/^일시\s*[:：]/.test(line)){data.date=line.replace(/^일시\s*[:：]/,'').trim();return} if(/^장소\s*[:：]/.test(line)){data.place=line.replace(/^장소\s*[:：]/,'').trim();return} const t=TEAMS.find(x=>x.keys.some(k=>line.replace(/\s/g,'').includes(k.replace(/\s/g,'')))); if(t){ti=t.idx;member=findMember(data,ti,'자동삽입','');return} const mm=line.match(/^(담당자|작성자|이름)\s*[:：]\s*(.+)$/); if(mm){member=findMember(data,ti,mm[2],'');return} if(/전월|활동\s*보고/.test(line)&&!/당월/.test(line)){p='prev';return} if(/당월|활동\s*계획/.test(line)){p='next';return} if(/^■/.test(line)){member[p].push({name:cleanLine(line),subs:[]});count++;} else if(member[p].length){member[p][member[p].length-1].subs.push({text:cleanLine(line)});} }); return{data,count,mode:'text'}; }
+  function applyResult(res){ if(!res||!res.data)return; if(typeof restoreData==='function')restoreData(res.data); if(typeof autoSave==='function')autoSave(); status('import-status',`✅ 자동 기입 완료: ${res.count||0}개 항목 반영 (${res.mode})`,'ok'); toast('✅ 회의자료가 자동 기입되었습니다.'); if(typeof goStep==='function')goStep('info'); }
+  function applyImport(){ const text=document.getElementById('import-meeting-text')?.value||''; const reset=document.getElementById('import-reset-current')?.checked||false; if(!text.trim()){toast('⚠️ 붙여넣은 내용이 없습니다.');return} try{const json=JSON.parse(text); if(json.programs||json.data){applyResult({data:json.data||json,count:1,mode:'json'});return}}catch(e){} applyResult(parseText(text,reset)); }
+  function status(id,msg,type){ const box=document.getElementById(id); if(!box)return; box.style.display='block'; box.className='import-status'+(type?' '+type:''); box.textContent=msg; }
+  function rowsToTsv(rows){ return rows.map(r=>r.map(v=>String(v??'').replace(/\t/g,' ').replace(/\r?\n/g,' / ')).join('\t')).join('\n'); }
 
-  function stripBullet(line) {
-    return String(line || '').replace(/^[\-–—•ㆍ·*■□▶▷✔✓\d.\)\s]+/, '').trim();
+  async function handleImportFile(file){ if(!file)return; const name=file.name.toLowerCase(); const reset=document.getElementById('import-reset-current')?.checked||false; if(/\.(txt|csv|json)$/.test(name)){document.getElementById('import-meeting-text').value=await file.text(); applyImport(); return;} if(/\.(xlsx|xls)$/.test(name)){ if(!window.XLSX){toast('⚠️ 엑셀 라이브러리를 불러오지 못했습니다.');return} const wb=XLSX.read(await file.arrayBuffer(),{type:'array'}); const rows=[]; wb.SheetNames.forEach(s=>XLSX.utils.sheet_to_json(wb.Sheets[s],{header:1,defval:''}).forEach(r=>rows.push(r))); document.getElementById('import-meeting-text').value=rowsToTsv(rows); applyResult(parseRows(rows,reset)); return;} toast('⚠️ 지원 파일: xlsx, xls, csv, txt, json'); }
+
+  async function loadPdfJs(){ const pdfjs=await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs'); pdfjs.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs'; return pdfjs; }
+  function linesFromItems(items){ const arr=items.map(it=>({text:String(it.str||'').trim(),x:it.transform[4],y:it.transform[5]})).filter(i=>i.text); arr.sort((a,b)=>(b.y-a.y)||(a.x-b.x)); const groups=[]; arr.forEach(i=>{let g=groups.find(x=>Math.abs(x.y-i.y)<4); if(!g){g={y:i.y,items:[]};groups.push(g)} g.items.push(i); g.y=(g.y+i.y)/2;}); return groups.sort((a,b)=>b.y-a.y).map(g=>{const s=g.items.sort((a,b)=>a.x-b.x);return{text:s.map(i=>i.text).join(' ').replace(/\s+/g,' ').trim(),x:Math.min(...s.map(i=>i.x)),y:g.y}}); }
+  function basicFromText(text){ const b={year:'',month:'',date:'',place:'',agenda:[],dozan:''}; const ym=text.match(/(20\d{2})\s*년\s*(\d{1,2})\s*월/); if(ym){b.year=ym[1];b.month=ym[2]} const dt=text.match(/일시\s*[:：]\s*([^\n]+)/); if(dt)b.date=dt[1].trim(); const pl=text.match(/장소\s*[:：]\s*([^\n]+)/); if(pl)b.place=pl[1].trim(); text.split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*(\d+)\.\s*(.+)$/); if(m)b.agenda.push(m[2].trim())}); return b; }
+  function people(text,label){ const m=text.match(new RegExp(label+'\\s*([0-9,]+)\\s*명')); return m?Number(m[1].replace(/,/g,'')):''; }
+  function parseChunk(lines){ const all=lines.join('\n'); const title=cleanLine(lines[0]).replace(/^■\s*/,'')||'제목 없음'; const detail=lines.slice(1).map(cleanLine).filter(Boolean).join('\n'); const date=(all.match(/일시\s*[:：]\s*([^\n]+)/)||[,''])[1].trim(); const time=(date.match(/(\d{1,2}:\d{2}\s*[~\-–]\s*\d{1,2}:\d{2})/)||[,''])[1].trim(); const place=(all.match(/장소\s*[:：]\s*([^\n]+)/)||[,''])[1].trim(); return{title,detail,date,time,place,youth:people(all,'청소년'),adult:people(all,'성인'),leader:people(all,'지도자')}; }
+  function nameMarkers(lines){ const names=[]; let buf='',start=0,prev=null; const bad=['담','당','담당','월','활동','보고','계획','일시','장소','인원','내용']; function flush(title=''){ const n=buf.trim(); if(/^[가-힣]{2,4}$/.test(n)&&!bad.includes(n))names.push({name:n,title,y:start||prev||9999}); buf='';start=0;} lines.forEach(l=>{const t=l.text.replace(/\s/g,''); if(!t||bad.includes(t))return; if(prev!==null&&Math.abs(prev-l.y)>42)flush(); prev=l.y; if(['주임','대리','팀장','부장','관장'].includes(t)){flush(t);return} if(t==='기타'||t==='공통'){names.push({name:t,title:'',y:l.y});return} if(/^[가-힣]{1,4}$/.test(t)){if(!start)start=l.y; if(t.length>=2){buf=t;flush()}else{buf+=t;if(buf.length>=4)flush()}} }); flush(); return names.sort((a,b)=>b.y-a.y); }
+  function splitChunks(lines){ const chunks=[]; let cur=null; lines.forEach(l=>{const t=l.text.trim(); if(!t||/^-?\d+-?$/.test(t.replace(/\s/g,'')))return; if(/^■/.test(t)){cur=[t];chunks.push({y:l.y,lines:cur});return} if(!cur){if(/^[*＊]/.test(t)||t.length>8){cur=[t];chunks.push({y:l.y,lines:cur})} return} cur.push(t);}); return chunks; }
+  function memberFor(markers,y,last){return markers.find(m=>m.y>=y-6)||markers[markers.length-1]||{name:last||'자동변환',title:''};}
+  async function convertPdf(){ if(!selectedPdfFile){toast('⚠️ PDF 파일을 선택해주세요.');return} try{document.getElementById('btn-pdf-convert').disabled=true; status('pdf-status','PDF를 분석하는 중입니다. 좌우 2단 표는 변환 후 확인이 필요합니다.'); const pdfjs=await loadPdfJs(); const pdf=await pdfjs.getDocument({data:await selectedPdfFile.arrayBuffer()}).promise; const rows=[HEADERS]; const raw=[['페이지','추출 텍스트']]; let basic={year:'',month:'',date:'',place:'',agenda:[]}; let currentTeam='운영지원팀',lastMember=''; for(let p=1;p<=pdf.numPages;p++){status('pdf-status',`PDF ${p}/${pdf.numPages}쪽 분석 중...`); const page=await pdf.getPage(p); const vp=page.getViewport({scale:1}); const lines=linesFromItems((await page.getTextContent()).items); const text=lines.map(l=>l.text).join('\n'); raw.push([`Page ${p}`,text]); if(p===1)basic=basicFromText(text); const foundTeam=TEAMS.find(t=>t.keys.some(k=>text.replace(/\s/g,'').includes(k.replace(/\s/g,'')))); if(foundTeam)currentTeam=foundTeam.name; if(p<2)continue; const nameLines=lines.filter(l=>l.x<vp.width*.17); const prevLines=lines.filter(l=>l.x>=vp.width*.17&&l.x<vp.width*.55); const nextLines=lines.filter(l=>l.x>=vp.width*.55); const markers=nameMarkers(nameLines); [['전월',prevLines],['당월',nextLines]].forEach(([g,col])=>{splitChunks(col).forEach(ch=>{const m=memberFor(markers,ch.y,lastMember); lastMember=m.name; const pr=parseChunk(ch.lines); rows.push([basic.year||new Date().getFullYear(),basic.month||new Date().getMonth()+1,basic.date||'',basic.place||'',currentTeam,m.name,m.title,g,pr.title,pr.detail,pr.date,pr.time,pr.place,pr.youth,pr.adult,pr.leader,'PDF 자동 변환 후 확인 필요']);});}); } const count=rows.length-1; document.getElementById('import-meeting-text').value=rowsToTsv(rows); if(window.XLSX){const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),'붙여넣기용_활동자료'); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['항목','내용'],['연도',basic.year],['월',basic.month],['회의일시',basic.date],['회의장소',basic.place],['안건',(basic.agenda||[]).join('\n')]]),'기본정보_안건'); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(raw),'PDF추출원문'); XLSX.writeFile(wb,selectedPdfFile.name.replace(/\.pdf$/i,'')+'_표준엑셀변환.xlsx');} status('pdf-status',`✅ PDF 변환 완료: ${count}개 후보 항목을 엑셀로 변환했습니다. 다운로드한 엑셀을 확인하거나 바로 자동 기입할 수 있습니다.`,'ok'); toast('✅ PDF를 엑셀 양식으로 변환했습니다.'); }catch(e){console.error(e); status('pdf-status','PDF 변환 실패: 텍스트형 PDF가 아니거나 브라우저에서 분석할 수 없는 구조입니다. 스캔 PDF는 OCR/서버형 분석이 필요합니다.','err'); toast('⚠️ PDF 변환에 실패했습니다.');} finally{document.getElementById('btn-pdf-convert').disabled=false;} }
+
+  function sample(){ document.getElementById('import-meeting-text').value=`연도\t월\t회의일시\t회의장소\t팀\t담당자\t직위\t구분\t프로그램명\t세부내용\t일자\t시간\t운영장소\t청소년\t성인\t지도자\t비고\n2026\t6\t2026. 6. 4.(목) 10:00\t어우러짐\t운영지원팀\t이건희\t주임\t전월\t청소년 스마트 체육관 FUNGYM[재미:짐]\t8주 체형관리 결과보고 및 활동소식 제작\t5월\t\t스마트체육관\t8\t1\t1\t\n2026\t6\t2026. 6. 4.(목) 10:00\t어우러짐\t운영지원팀\t이건희\t주임\t당월\t청소년 스마트 체육관 FUNGYM[재미:짐]\t12주 체형관리 운영\t13.(토), 20.(토), 27.(토)\t10:00~11:00\t스마트체육관\t29\t1\t1\t`; status('import-status','예시 데이터가 입력되었습니다. 자동 기입하기를 누르세요.','ok'); }
+
+  function goImport(){ if(typeof showPage==='function')showPage('input'); document.querySelectorAll('.step-panel').forEach(p=>p.classList.remove('active')); document.getElementById(PANEL_ID)?.classList.add('active'); document.querySelectorAll('.step-item').forEach(i=>i.classList.remove('active')); document.getElementById(STEP_ID)?.classList.add('active'); }
+  function injectPanel(){ if(document.getElementById(STEP_ID))return; const stepList=document.getElementById('step-list'), formArea=document.querySelector('.form-area'); if(!stepList||!formArea)return; const li=document.createElement('li'); li.className='step-item step-item-import'; li.id=STEP_ID; li.innerHTML='<span class="step-num"><i class="fas fa-file-import"></i></span><span class="step-label">회의자료 삽입</span>'; li.addEventListener('click',goImport); stepList.insertBefore(li,document.getElementById('step-tab-info')||stepList.firstChild); const panel=document.createElement('div'); panel.className='step-panel'; panel.id=PANEL_ID; panel.innerHTML=`
+    <div class="panel-header" style="border-left-color:#d97706"><h2 style="color:#d97706"><i class="fas fa-file-import"></i> 회의자료 삽입</h2><p>PDF를 엑셀 양식으로 변환하거나, 엑셀·CSV·텍스트 자료를 자동 기입합니다.</p></div>
+    <div class="import-card pdf"><div class="import-title pdf"><i class="fas fa-file-pdf"></i> PDF → 표준 엑셀 변환</div><div class="import-sub">PDF 회의자료를 표준 엑셀 양식으로 변환해 다운로드하고, 변환 결과를 아래 붙여넣기 영역에 자동 반영합니다.</div><div class="import-grid"><label class="import-drop pdf" id="pdf-drop" for="pdf-input"><i class="fas fa-file-arrow-up"></i><strong>PDF 파일 선택 또는 드래그</strong><small>텍스트형 PDF 우선 지원 / 스캔 PDF는 OCR 필요</small><div class="import-file-name" id="pdf-file-name">선택된 PDF 없음</div></label><div class="import-help"><div><b>흐름:</b> PDF 업로드 → 엑셀 다운로드 → 엑셀 확인·수정 → 자동 기입</div><div><b>주의:</b> 담당자명이 세로로 배치된 PDF는 일부 항목 확인이 필요합니다.</div></div></div><input type="file" id="pdf-input" accept=".pdf,application/pdf" style="display:none"><div class="import-actions"><div class="import-btns"><button class="btn-pdf btn-pdf-convert" id="btn-pdf-convert"><i class="fas fa-file-excel"></i> PDF를 엑셀로 변환/다운로드</button><button class="btn-pdf btn-pdf-apply" id="btn-pdf-apply"><i class="fas fa-check"></i> 변환 결과 자동 기입</button></div></div><div id="pdf-status" class="import-status"></div></div>
+    <div class="import-card data"><div class="import-title data"><i class="fas fa-table"></i> 엑셀·텍스트 회의자료 자동 기입</div><div class="import-grid"><label class="import-drop data" id="import-drop" for="import-file-input"><i class="fas fa-cloud-arrow-up"></i><strong>엑셀/CSV/TXT/JSON 업로드</strong><small>또는 아래 입력창에 엑셀 표를 붙여넣으세요.</small></label><div class="import-help"><div><b>권장 열:</b> 연도, 월, 회의일시, 회의장소, 팀, 담당자, 직위, 구분, 프로그램명, 세부내용, 일자, 시간, 운영장소, 청소년, 성인, 지도자, 비고</div><div><b>구분:</b> 전월 / 당월 입력 시 각 영역에 자동 배치됩니다.</div></div></div><input type="file" id="import-file-input" accept=".xlsx,.xls,.csv,.txt,.json" style="display:none"><textarea id="import-meeting-text" class="import-textarea" placeholder="엑셀 표 복사본, CSV, 텍스트를 붙여넣으세요."></textarea><div class="import-actions"><label class="import-option"><input type="checkbox" id="import-reset-current"> 현재 입력자료를 비우고 새 회의자료로 생성</label><div class="import-btns"><button class="btn-import btn-sample" id="btn-import-sample"><i class="fas fa-wand-magic-sparkles"></i> 예시</button><button class="btn-import btn-clear" id="btn-import-clear"><i class="fas fa-eraser"></i> 비우기</button><button class="btn-import btn-primary" id="btn-import-apply"><i class="fas fa-check"></i> 자동 기입하기</button></div></div><div id="import-status" class="import-status"></div></div>`; formArea.insertBefore(panel,formArea.firstChild);
+    document.getElementById('btn-import-apply').addEventListener('click',applyImport); document.getElementById('btn-import-clear').addEventListener('click',()=>{document.getElementById('import-meeting-text').value='';}); document.getElementById('btn-import-sample').addEventListener('click',sample); document.getElementById('import-file-input').addEventListener('change',e=>handleImportFile(e.target.files[0])); document.getElementById('btn-pdf-convert').addEventListener('click',convertPdf); document.getElementById('btn-pdf-apply').addEventListener('click',applyImport); document.getElementById('pdf-input').addEventListener('change',e=>{selectedPdfFile=e.target.files[0]||null;document.getElementById('pdf-file-name').textContent=selectedPdfFile?selectedPdfFile.name:'선택된 PDF 없음';});
+    [['import-drop','import-file-input'],['pdf-drop','pdf-input']].forEach(([dropId,inputId])=>{const d=document.getElementById(dropId); d.addEventListener('dragover',e=>{e.preventDefault();d.classList.add('drag-active')}); d.addEventListener('dragleave',()=>d.classList.remove('drag-active')); d.addEventListener('drop',e=>{e.preventDefault();d.classList.remove('drag-active'); const f=e.dataTransfer.files[0]; if(dropId==='pdf-drop'){selectedPdfFile=f; document.getElementById('pdf-file-name').textContent=f?f.name:'선택된 PDF 없음'} else handleImportFile(f);});});
   }
-
-  function parseTextToData(text, reset) {
-    const data = reset ? blankDataFromCurrent() : currentDataCopy();
-    ensurePrograms(data);
-    const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    let section = '';
-    let teamIdx = 0;
-    let period = 'next';
-    let member = null;
-    let currentProg = null;
-    let count = 0;
-    const dozanLines = [];
-
-    function setMember(name) { member = findOrCreateMember(data, teamIdx, name || '자동삽입', ''); }
-    function addProgram(name) {
-      if (!member) setMember('자동삽입');
-      const prog = { name: stripBullet(name) || '제목 없음', subs: [] };
-      member[period].push(prog);
-      currentProg = prog;
-      count += 1;
-    }
-
-    lines.forEach(raw => {
-      const line = raw.trim();
-      const ym = line.match(/(20\d{2})\s*년\s*(\d{1,2})\s*월/);
-      if (ym) { data.year = Number(ym[1]); data.month = Number(ym[2]); }
-      if (/^일시\s*[:：]/.test(line)) { data.date = line.replace(/^일시\s*[:：]/, '').trim(); return; }
-      if (/^장소\s*[:：]/.test(line)) { data.place = line.replace(/^장소\s*[:：]/, '').trim(); return; }
-      if (/안건/.test(line)) { section = 'agenda'; return; }
-      if (/도산의\s*말씀/.test(line)) { section = 'dozan'; return; }
-      if (/기타\s*공지|공지사항/.test(line)) { section = 'notices'; return; }
-      if (/생일/.test(line)) { section = 'birthdays'; return; }
-
-      const team = TEAM_NAMES.find(t => t.keys.some(k => line.replace(/\s/g, '').includes(k.replace(/\s/g, ''))));
-      if (team) { teamIdx = team.idx; section = 'programs'; setMember('자동삽입'); return; }
-      if (/전월|활동\s*보고|보고/.test(line) && !/당월/.test(line)) { period = 'prev'; section = 'programs'; currentProg = null; return; }
-      if (/당월|활동\s*계획|계획/.test(line)) { period = 'next'; section = 'programs'; currentProg = null; return; }
-
-      const memberMatch = line.match(/^(담당자|작성자|이름)\s*[:：]\s*(.+)$/);
-      if (memberMatch) { setMember(memberMatch[2]); return; }
-
-      if (section === 'agenda') {
-        const text = stripBullet(line);
-        if (text) data.agenda.push({ text });
-        return;
-      }
-      if (section === 'dozan') { dozanLines.push(line); return; }
-      if (section === 'notices') { data.notices.push(stripBullet(line)); return; }
-      if (section === 'birthdays') { data.birthdays.push({ name: stripBullet(line), date: '' }); return; }
-      if (section === 'programs') {
-        if (/^[-–—•ㆍ·]/.test(line) && currentProg) currentProg.subs.push({ text: stripBullet(line) });
-        else addProgram(line);
-      }
-    });
-
-    if (dozanLines.length) data.dozan.content = dozanLines.join('\n');
-    return { data, count, mode: 'text' };
-  }
-
-  function parseDelimitedText(text) {
-    const lines = String(text || '').split(/\r?\n/).filter(l => l.trim());
-    const delimiter = lines.some(l => l.includes('\t')) ? '\t' : ',';
-    return lines.map(line => line.split(delimiter).map(c => c.replace(/^"|"$/g, '').trim()));
-  }
-
-  function applyImportFromText() {
-    const text = document.getElementById('import-meeting-text')?.value || '';
-    const reset = document.getElementById('import-reset-current')?.checked || false;
-    if (!text.trim()) { showToast('⚠️ 붙여넣은 회의자료 내용이 없습니다.'); return; }
-
-    let result;
-    const looksTable = text.includes('\t') || text.split(/\r?\n/)[0]?.includes(',');
-    if (looksTable && /팀|담당자|프로그램|구분|사업명|활동명/.test(text.split(/\r?\n/)[0] || '')) {
-      result = parseRowsToData(parseDelimitedText(text), reset);
-    } else {
-      try {
-        const json = JSON.parse(text);
-        const imported = json.data || json;
-        if (imported && imported.programs) result = { data: imported, count: 1, mode: 'json' };
-        else result = parseTextToData(text, reset);
-      } catch(e) {
-        result = parseTextToData(text, reset);
-      }
-    }
-    applyImportedData(result);
-  }
-
-  function applyImportedData(result) {
-    if (!result || !result.data) return;
-    if (typeof restoreData === 'function') restoreData(result.data);
-    if (typeof autoSave === 'function') autoSave();
-    showImportResult(`✅ 회의자료 삽입 완료: ${result.count || 0}개 항목을 자동 기입했습니다. (${result.mode})`);
-    showToast('✅ 회의자료가 자동 기입되었습니다. 입력 내용을 확인해주세요.');
-    if (typeof goStep === 'function') goStep('info');
-  }
-
-  function showImportResult(msg) {
-    const box = document.getElementById('import-result-box');
-    if (!box) return;
-    box.style.display = 'block';
-    box.textContent = msg;
-  }
-
-  function loadSample() {
-    const sample = `연도\t월\t회의일시\t회의장소\t팀\t담당자\t직위\t구분\t프로그램명\t세부내용\t일자\t시간\t운영장소\t청소년\t성인\t지도자\t비고\n2026\t6\t2026. 6. 4.(목) 10:00~11:00\t어우러짐\t운영지원팀\t이건희\t주임\t전월\t청소년 스마트 체육관 FUNGYM[재미:짐]\t8주 체형관리 결과보고 및 활동소식 게시\t5월\t\t스마트체육관\t8\t1\t1\t\n2026\t6\t2026. 6. 4.(목) 10:00~11:00\t어우러짐\t운영지원팀\t이건희\t주임\t당월\t청소년 스마트 체육관 FUNGYM[재미:짐]\t12주 체형관리 운영\t6월\t10:00~11:00\t스마트체육관\t29\t1\t1\t`;
-    document.getElementById('import-meeting-text').value = sample;
-    showImportResult('예시 데이터가 입력되었습니다. [자동 기입하기]를 눌러 확인하세요.');
-  }
-
-  async function handleFile(file) {
-    if (!file) return;
-    const reset = document.getElementById('import-reset-current')?.checked || false;
-    const name = file.name.toLowerCase();
-    if (/\.json$/.test(name)) {
-      const text = await file.text();
-      document.getElementById('import-meeting-text').value = text;
-      applyImportFromText();
-      return;
-    }
-    if (/\.(txt|csv)$/.test(name)) {
-      const text = await file.text();
-      document.getElementById('import-meeting-text').value = text;
-      applyImportFromText();
-      return;
-    }
-    if (/\.(xlsx|xls)$/.test(name)) {
-      if (!window.XLSX) { showToast('⚠️ 엑셀 파싱 라이브러리를 불러오지 못했습니다.'); return; }
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array' });
-      const rows = [];
-      wb.SheetNames.forEach(sheetName => {
-        const ws = wb.Sheets[sheetName];
-        const arr = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-        arr.forEach(r => rows.push(r));
-      });
-      document.getElementById('import-meeting-text').value = rows.map(r => r.join('\t')).join('\n');
-      applyImportedData(parseRowsToData(rows, reset));
-      return;
-    }
-    showToast('⚠️ 현재는 txt, csv, xlsx, xls, json 파일을 우선 지원합니다.');
-  }
-
-  function goImportStep() {
-    if (typeof showPage === 'function') showPage('input');
-    document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
-    document.getElementById(PANEL_ID)?.classList.add('active');
-    document.querySelectorAll('.step-item').forEach(i => i.classList.remove('active'));
-    document.getElementById(STEP_ID)?.classList.add('active');
-  }
-
-  function injectTabAndPanel() {
-    if (document.getElementById(STEP_ID)) return;
-    const stepList = document.getElementById('step-list');
-    const formArea = document.querySelector('.form-area');
-    if (!stepList || !formArea) return;
-
-    const li = document.createElement('li');
-    li.className = 'step-item step-item-import';
-    li.id = STEP_ID;
-    li.innerHTML = `<span class="step-num"><i class="fas fa-file-import"></i></span><span class="step-label">회의자료 삽입</span>`;
-    li.addEventListener('click', goImportStep);
-    const infoTab = document.getElementById('step-tab-info');
-    stepList.insertBefore(li, infoTab || stepList.firstChild);
-
-    const panel = document.createElement('div');
-    panel.className = 'step-panel';
-    panel.id = PANEL_ID;
-    panel.innerHTML = `
-      <div class="panel-header" style="border-left-color:#d97706">
-        <h2 style="color:#d97706"><i class="fas fa-file-import"></i> 회의자료 삽입</h2>
-        <p>엑셀·CSV·텍스트 회의자료를 붙여넣거나 파일로 불러와 현재 양식에 자동 기입합니다.</p>
-      </div>
-      <div class="import-panel-card">
-        <div class="import-grid">
-          <div>
-            <label class="import-drop-zone" id="import-drop-zone" for="import-file-input">
-              <i class="fas fa-cloud-arrow-up"></i>
-              <p><strong>파일을 드래그하거나 클릭해서 업로드</strong><br>또는 아래 입력칸에 회의자료 텍스트/엑셀 표를 붙여넣으세요.</p>
-              <small>지원: .xlsx / .xls / .csv / .txt / .json</small>
-            </label>
-            <input type="file" id="import-file-input" accept=".xlsx,.xls,.csv,.txt,.json" style="display:none">
-          </div>
-          <div class="import-help-list">
-            <div><b>엑셀 권장 열:</b> 연도, 월, 회의일시, 회의장소, 팀, 담당자, 직위, 구분, 프로그램명, 세부내용, 일자, 시간, 운영장소, 청소년, 성인, 지도자, 비고</div>
-            <div><b>구분 열:</b> 전월 / 당월로 입력하면 전월 활동보고와 당월 활동계획에 자동 배치됩니다.</div>
-            <div><b>텍스트:</b> 운영지원팀, 전월 활동 보고, 당월 활동 계획 같은 제목을 기준으로 자동 분류합니다.</div>
-          </div>
-        </div>
-        <textarea id="import-meeting-text" class="import-textarea" placeholder="여기에 회의자료 텍스트, CSV, 엑셀 표 복사본을 붙여넣으세요."></textarea>
-        <div class="import-actions">
-          <label class="import-option"><input type="checkbox" id="import-reset-current"> 현재 입력자료를 비우고 새 회의자료로 생성</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" class="btn-import-sample" id="btn-import-sample"><i class="fas fa-wand-magic-sparkles"></i> 예시 불러오기</button>
-            <button type="button" class="btn-import-clear" id="btn-import-clear"><i class="fas fa-eraser"></i> 비우기</button>
-            <button type="button" class="btn-import-apply" id="btn-import-apply"><i class="fas fa-check"></i> 자동 기입하기</button>
-          </div>
-        </div>
-        <div id="import-result-box" class="import-result-box"></div>
-      </div>`;
-    formArea.insertBefore(panel, formArea.firstChild);
-
-    document.getElementById('btn-import-apply').addEventListener('click', applyImportFromText);
-    document.getElementById('btn-import-clear').addEventListener('click', () => {
-      document.getElementById('import-meeting-text').value = '';
-      const box = document.getElementById('import-result-box');
-      if (box) box.style.display = 'none';
-    });
-    document.getElementById('btn-import-sample').addEventListener('click', loadSample);
-    document.getElementById('import-file-input').addEventListener('change', e => handleFile(e.target.files[0]));
-
-    const drop = document.getElementById('import-drop-zone');
-    drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-active'); });
-    drop.addEventListener('dragleave', () => drop.classList.remove('drag-active'));
-    drop.addEventListener('drop', e => {
-      e.preventDefault(); drop.classList.remove('drag-active');
-      handleFile(e.dataTransfer.files[0]);
-    });
-  }
-
-  function initImportMeeting() {
-    injectStyle();
-    injectTabAndPanel();
-  }
-
-  window.goImportMeetingStep = goImportStep;
-  document.addEventListener('DOMContentLoaded', initImportMeeting);
-  window.addEventListener('load', initImportMeeting);
-  setTimeout(initImportMeeting, 600);
+  function init(){ injectStyle(); injectPanel(); }
+  window.goImportMeetingStep=goImport; document.addEventListener('DOMContentLoaded',init); window.addEventListener('load',init); setTimeout(init,600);
 })();
