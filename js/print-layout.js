@@ -5,6 +5,125 @@
    ============================================ */
 
 (function () {
+  const STYLE_ID = 'print-two-column-layout-style';
+
+  function injectTwoColumnStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      .doc-team-block {
+        margin-bottom: 28px;
+      }
+
+      .doc-member-lr-wrap {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 14px;
+        align-items: start;
+      }
+
+      .doc-member-col {
+        min-width: 0;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+
+      .doc-member-prev-col {
+        border-top: 4px solid #d97706;
+      }
+
+      .doc-member-next-col {
+        border-top: 4px solid #2e8a57;
+      }
+
+      .doc-member-col .doc-sub-title {
+        margin-top: 0 !important;
+        padding-top: 0;
+      }
+
+      .doc-empty-text {
+        font-size: 12px;
+        color: #94a3b8;
+        padding: 6px 4px;
+        line-height: 1.6;
+      }
+
+      @media (max-width: 800px) {
+        .doc-member-lr-wrap {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media print {
+        @page {
+          size: A4;
+          margin: 12mm;
+        }
+
+        .preview-document {
+          padding: 0 !important;
+          font-size: 11px;
+        }
+
+        .doc-member-lr-wrap {
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+          gap: 8mm !important;
+          align-items: start !important;
+        }
+
+        .doc-member-block,
+        .doc-member-col,
+        .doc-program {
+          break-inside: avoid !important;
+          page-break-inside: avoid !important;
+        }
+
+        .doc-member-block {
+          margin-bottom: 10mm !important;
+          padding: 8px 10px !important;
+        }
+
+        .doc-member-title {
+          font-size: 12px !important;
+          margin-bottom: 6px !important;
+          padding-bottom: 5px !important;
+        }
+
+        .doc-sub-title {
+          font-size: 11px !important;
+          margin-bottom: 6px !important;
+          padding-bottom: 5px !important;
+        }
+
+        .doc-program {
+          padding: 7px 8px !important;
+          margin-bottom: 6px !important;
+        }
+
+        .doc-program-name {
+          font-size: 11px !important;
+          margin-bottom: 3px !important;
+        }
+
+        .doc-program-meta,
+        .doc-program-sub,
+        .doc-sub-meta-item,
+        .doc-empty-text {
+          font-size: 10px !important;
+          line-height: 1.45 !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  injectTwoColumnStyle();
+
   function buildDocProgramSafe(prog) {
     if (typeof window.buildDocProgram === 'function') {
       return window.buildDocProgram(prog);
@@ -13,6 +132,8 @@
   }
 
   window.generatePreview = function generatePreviewTwoColumn() {
+    injectTwoColumnStyle();
+
     const d = collectData();
     document.getElementById('preview-title-label').textContent = `${d.year}년 ${d.month}월 전체회의 자료`;
 
