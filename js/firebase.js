@@ -7,6 +7,7 @@
    ============================================================ */
 
 import './print-layout.js';
+import './copy-prev-to-next.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, set, get, remove, onValue, child }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
