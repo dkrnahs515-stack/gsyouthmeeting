@@ -3,6 +3,8 @@
    ============================================================
    - 자동저장(draft) → Firebase RTDB /draft 경로
    - 회의 이력(history) → Firebase RTDB /history 경로
+   - 회의 이력은 저장 시점별 고유 ID로 누적 저장
+   - 작성자명을 입력·저장하고 회의 이력에서 확인 가능
    - localStorage를 완전히 대체 (오프라인 fallback 포함)
    ============================================================ */
 
@@ -44,6 +46,161 @@ function sanitize(obj) {
   return JSON.parse(JSON.stringify(obj, (k, v) => v === undefined ? null : v));
 }
 
+function createHistoryId(year, month) {
+  const ts = Date.now();
+  const rand = Math.random().toString(36).slice(2, 7);
+  return `history_${year}_${String(month).padStart(2, '0')}_${ts}_${rand}`;
+}
+
+function getStoredAuthorName() {
+  try { return localStorage.getItem('kgyc_author_name') || ''; }
+  catch(e) { return ''; }
+}
+
+function setStoredAuthorName(name) {
+  try { localStorage.setItem('kgyc_author_name', name || ''); } catch(e) {}
+}
+
+function injectAuthorInput() {
+  const actions = document.querySelector('.preview-actions');
+  if (!actions || document.getElementById('meeting-author')) return;
+
+  const wrap = document.createElement('label');
+  wrap.className = 'author-input-wrap';
+  wrap.innerHTML = `
+    <span class="author-input-label"><i class="fas fa-user-pen"></i> 작성자</span>
+    <input type="text" id="meeting-author" class="author-input" placeholder="작성자명" value="${escHtml(getStoredAuthorName())}">
+  `;
+
+  const saveBtn = actions.querySelector('.btn-save-meeting');
+  if (saveBtn) actions.insertBefore(wrap, saveBtn);
+  else actions.prepend(wrap);
+
+  const input = wrap.querySelector('#meeting-author');
+  input.addEventListener('input', () => setStoredAuthorName(input.value.trim()));
+}
+
+function injectAuthorStyle() {
+  if (document.getElementById('author-history-style')) return;
+
+  const style = document.createElement('style');
+  style.id = 'author-history-style';
+  style.textContent = `
+    .author-input-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: #f8fafc;
+      border: 1.5px solid #e2e8f0;
+      margin-right: 6px;
+      white-space: nowrap;
+    }
+
+    .author-input-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #475569;
+    }
+
+    .author-input {
+      width: 96px;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .author-input::placeholder {
+      color: #94a3b8;
+      font-weight: 500;
+    }
+
+    .history-author-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      background: #eef6ff;
+      color: #1a4a8a;
+      font-size: 11px;
+      font-weight: 700;
+      margin-right: 6px;
+    }
+
+    @media (max-width: 700px) {
+      .preview-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .author-input-wrap {
+        order: -1;
+        width: 100%;
+        justify-content: flex-start;
+        margin-right: 0;
+      }
+      .author-input {
+        width: 140px;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function initAuthorUI() {
+  injectAuthorStyle();
+  injectAuthorInput();
+}
+
+function getAuthorNameForSave() {
+  initAuthorUI();
+
+  let author = document.getElementById('meeting-author')?.value.trim() || getStoredAuthorName().trim();
+  if (!author) {
+    author = prompt('작성자명을 입력해주세요.', '')?.trim() || '';
+  }
+
+  if (!author) {
+    showToast('⚠️ 작성자명을 입력해야 저장할 수 있습니다.');
+    const input = document.getElementById('meeting-author');
+    if (input) input.focus();
+    return null;
+  }
+
+  const input = document.getElementById('meeting-author');
+  if (input) input.value = author;
+  setStoredAuthorName(author);
+  return author;
+}
+
+function addLocalHistoryRecord(record) {
+  try {
+    const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
+    const exists = saved.some(s => s.id === record.id);
+    if (!exists) saved.unshift(record);
+    localStorage.setItem('kgyc_history', JSON.stringify(saved));
+  } catch(e) {}
+}
+
+function removeLocalHistoryRecord(record) {
+  try {
+    const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
+    const filtered = saved.filter(s => {
+      if (record.id && s.id) return s.id !== record.id;
+      return !(s.year === record.year && s.month === record.month && s.savedAt === record.savedAt);
+    });
+    localStorage.setItem('kgyc_history', JSON.stringify(filtered));
+  } catch(e) {}
+}
+
 /* ─────────────────────────────────────────
    자동 저장 (debounce 1 초)
 ──────────────────────────────────────────*/
@@ -69,11 +226,14 @@ function autoSave() {
    초기 로드 (앱 시작 시 draft 복원)
 ──────────────────────────────────────────*/
 async function loadFromLocalStorage() {
+  initAuthorUI();
+
   /* Firebase에서 먼저 시도 */
   try {
     const snap = await get(child(ref(db), 'draft'));
     if (snap.exists()) {
       restoreData(snap.val());
+      initAuthorUI();
       showToast('☁️ 클라우드에서 최신 데이터를 불러왔습니다.');
       return;
     }
@@ -86,6 +246,7 @@ async function loadFromLocalStorage() {
     const raw = localStorage.getItem('kgyc_draft');
     if (!raw) return;
     restoreData(JSON.parse(raw));
+    initAuthorUI();
     showToast('💾 로컬 저장 데이터를 불러왔습니다.');
   } catch(e) {}
 }
@@ -94,45 +255,39 @@ async function loadFromLocalStorage() {
    회의 저장 (saveMeeting)
 ──────────────────────────────────────────*/
 async function saveMeeting() {
+  const author = getAuthorNameForSave();
+  if (!author) return;
+
   const d     = collectData();
   const title = `${d.year}년 ${d.month}월 전체회의`;
-  const key   = `${d.year}_${String(d.month).padStart(2,'0')}`;  // e.g. "2026_05"
+  const key   = createHistoryId(d.year, d.month);
+  const now   = new Date();
+
   const record = {
-    id:      key,
+    id:        key,
     title,
-    year:    d.year,
-    month:   d.month,
-    savedAt: new Date().toLocaleString('ko-KR'),
-    data:    d
+    author,
+    year:      d.year,
+    month:     d.month,
+    savedAt:   now.toLocaleString('ko-KR'),
+    savedAtMs: now.getTime(),
+    data:      d
   };
 
-  /* Firebase 저장 */
+  /* Firebase 누적 저장 */
   updateSyncBadge('saving');
   try {
     await set(ref(db, `history/${key}`), sanitize(record));
     updateSyncBadge('saved');
-    showToast('✅ Firebase에 저장되었습니다!');
+    showToast(`✅ ${author} 작성자로 회의자료가 누적 저장되었습니다!`);
   } catch(err) {
     console.warn('[Firebase] 회의 저장 실패, localStorage fallback:', err);
     updateSyncBadge('error');
-    /* fallback: localStorage */
-    try {
-      const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
-      const ei = saved.findIndex(s => s.year===d.year && s.month===d.month);
-      if (ei >= 0) saved[ei] = record; else saved.unshift(record);
-      localStorage.setItem('kgyc_history', JSON.stringify(saved));
-      showToast('💾 로컬에 저장되었습니다 (클라우드 동기화 실패).');
-    } catch(e) {}
+    showToast('💾 로컬에 저장되었습니다 (클라우드 동기화 실패).');
   }
 
-  /* localStorage 백업도 유지 */
-  try {
-    const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
-    const ei = saved.findIndex(s => s.year===d.year && s.month===d.month);
-    if (ei >= 0) saved[ei] = record; else saved.unshift(record);
-    localStorage.setItem('kgyc_history', JSON.stringify(saved));
-  } catch(e) {}
-
+  /* localStorage 백업도 누적 유지 */
+  addLocalHistoryRecord(record);
   refreshHistory();
 }
 
@@ -140,6 +295,8 @@ async function saveMeeting() {
    회의 이력 갱신 (refreshHistory)
 ──────────────────────────────────────────*/
 async function refreshHistory() {
+  initAuthorUI();
+
   const list = document.getElementById('history-list');
   if (!list) return;
 
@@ -156,10 +313,7 @@ async function refreshHistory() {
     const snap = await get(ref(db, 'history'));
     if (snap.exists()) {
       const val = snap.val();
-      records = Object.values(val).sort((a, b) => {
-        if (b.year !== a.year) return b.year - a.year;
-        return b.month - a.month;
-      });
+      records = Object.values(val);
     }
   } catch(err) {
     console.warn('[Firebase] 이력 로드 실패, localStorage fallback:', err);
@@ -168,6 +322,14 @@ async function refreshHistory() {
       records = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
     } catch(e) {}
   }
+
+  records = records.sort((a, b) => {
+    const bt = Number(b.savedAtMs) || 0;
+    const at = Number(a.savedAtMs) || 0;
+    if (bt !== at) return bt - at;
+    if ((b.year || 0) !== (a.year || 0)) return (b.year || 0) - (a.year || 0);
+    return (b.month || 0) - (a.month || 0);
+  });
 
   if (!records.length) {
     list.innerHTML = `<div class="empty-state"><i class="fas fa-folder-open"></i><p>저장된 회의 자료가 없습니다.</p></div>`;
@@ -180,8 +342,9 @@ async function refreshHistory() {
       <div class="history-card-body">
         <div class="history-card-title">${escHtml(s.title)}</div>
         <div class="history-card-meta">
+          <span class="history-author-badge"><i class="fas fa-user-pen"></i> 작성자: ${escHtml(s.author || '미입력')}</span>
           <i class="fas fa-cloud" style="color:#2a67c0;margin-right:4px;font-size:10px;"></i>
-          저장일시: ${s.savedAt} · 장소: ${escHtml(s.data?.place||'-')}
+          저장일시: ${escHtml(s.savedAt || '-')} · 장소: ${escHtml(s.data?.place || '-')}
         </div>
       </div>
       <div class="history-card-actions">
@@ -207,7 +370,7 @@ function loadHistRecord(idx) {
   restoreData(records[idx].data);
   autoSave();
   showPage('input'); goStep('info');
-  showToast(`📂 "${records[idx].title}" 불러왔습니다.`);
+  showToast(`📂 "${records[idx].title}" 자료를 불러왔습니다. 작성자: ${records[idx].author || '미입력'}`);
 }
 
 /* ─────────────────────────────────────────
@@ -215,10 +378,11 @@ function loadHistRecord(idx) {
 ──────────────────────────────────────────*/
 async function deleteHistRecord(idx) {
   const records = window._fbHistoryCache || [];
-  if (!records[idx]) return;
-  if (!confirm(`"${records[idx].title}"을 삭제할까요?`)) return;
+  const record = records[idx];
+  if (!record) return;
+  if (!confirm(`"${record.title}"을 삭제할까요?\n작성자: ${record.author || '미입력'}\n저장일시: ${record.savedAt || '-'}`)) return;
 
-  const key = records[idx].id || `${records[idx].year}_${String(records[idx].month).padStart(2,'0')}`;
+  const key = record.id || `${record.year}_${String(record.month).padStart(2,'0')}`;
 
   /* Firebase 삭제 */
   try {
@@ -228,11 +392,7 @@ async function deleteHistRecord(idx) {
   }
 
   /* localStorage에서도 삭제 */
-  try {
-    const saved = JSON.parse(localStorage.getItem('kgyc_history') || '[]');
-    const ei = saved.findIndex(s => s.year===records[idx].year && s.month===records[idx].month);
-    if (ei >= 0) { saved.splice(ei, 1); localStorage.setItem('kgyc_history', JSON.stringify(saved)); }
-  } catch(e) {}
+  removeLocalHistoryRecord(record);
 
   refreshHistory();
   showToast('🗑️ 삭제되었습니다.');
@@ -258,10 +418,14 @@ function updateSyncBadge(state) {
   badge.innerHTML = `<i class="fas ${cfg.icon}"></i> ${cfg.text}`;
 }
 
+/* ── 초기 UI 보정 ── */
+document.addEventListener('DOMContentLoaded', initAuthorUI);
+window.addEventListener('load', initAuthorUI);
+
 /* ── 전역 노출 (app.js에서 호출 가능하도록) ── */
-window.autoSave          = autoSave;
+window.autoSave             = autoSave;
 window.loadFromLocalStorage = loadFromLocalStorage;
-window.saveMeeting       = saveMeeting;
-window.refreshHistory    = refreshHistory;
-window.loadHistRecord    = loadHistRecord;
-window.deleteHistRecord  = deleteHistRecord;
+window.saveMeeting          = saveMeeting;
+window.refreshHistory       = refreshHistory;
+window.loadHistRecord       = loadHistRecord;
+window.deleteHistRecord     = deleteHistRecord;
