@@ -1,4 +1,5 @@
 import './calendar-more-expand.js';
+import './calendar-expanded-jump-fix.js';
 
 /* ============================================
    월간 달력 일정 클릭 → 원본 입력 위치 이동
