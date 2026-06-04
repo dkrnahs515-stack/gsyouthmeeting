@@ -1,5 +1,6 @@
 import './calendar-more-expand.js';
 import './calendar-expanded-jump-fix.js';
+import './calendar-click-rebinder.js';
 
 /* ============================================
    월간 달력 일정 클릭 → 원본 입력 위치 이동
@@ -89,6 +90,7 @@ import './calendar-expanded-jump-fix.js';
 
   function init() {
     injectStyle();
+    if (typeof window.calendarRebindClicks === 'function') window.calendarRebindClicks();
   }
 
   window.jumpToCalendarSource = jumpToSource;
