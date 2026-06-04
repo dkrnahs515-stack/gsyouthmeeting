@@ -6,6 +6,7 @@ import './pdf-preview-fix.js';
 import './month-calendar.js';
 import './calendar-jump.js';
 import './program-item-extensions.js';
+import './program-schedule-extensions.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, set, get, remove, onValue, child } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
